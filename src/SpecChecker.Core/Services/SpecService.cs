@@ -14,8 +14,15 @@ public static class SpecService
         sb.AppendLine(new string('=', 70));
 
         sb.AppendLine("\nPROCESSOR");
+        var (pkg, hot, _) = SensorService.GetCpuTemps();
         foreach (var s in Query("SELECT Name FROM Win32_Processor"))
-            sb.AppendLine("  " + s["Name"]);
+        {
+            var temp = pkg.HasValue ? $" - {pkg.Value}C package"
+                     : " - temp not available (PawnIO driver not installed)";
+            sb.AppendLine("  " + s["Name"] + temp);
+            if (hot.HasValue && pkg.HasValue && hot.Value != pkg.Value)
+                sb.AppendLine($"  Hottest core: {hot.Value}C");
+        }
 
         sb.AppendLine("\nGRAPHICS CARD");
         // VRAM lookup order: DXGI (exact, all vendors) -> driver registry ->
