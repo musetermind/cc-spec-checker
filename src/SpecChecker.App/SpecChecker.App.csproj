@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RootNamespace>SpecChecker.App</RootNamespace>
+    <AssemblyName>CCSpecChecker</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>1.0.0</Version>
+    <!-- Runs UNELEVATED by default (no ApplicationManifest): WMI + DXGI +
+         NVAPI all work unelevated. Only SMART and the opt-in PawnIO install
+         need elevation, and those go through a helper/relaunch. -->
+    <!-- v1: standalone single exe. Native libs (Skia etc.) extract on first run -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.4" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.2.4" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.4" />
+    <ProjectReference Include="..\SpecChecker.Core\SpecChecker.Core.csproj" />
+  </ItemGroup>
+</Project>

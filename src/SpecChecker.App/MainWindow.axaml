@@ -1,0 +1,53 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SpecChecker.App.MainWindow"
+        Title="CC Spec Checker v1.0.0 — Computer Corner"
+        Width="1280" Height="800"
+        WindowStartupLocation="CenterScreen"
+        Background="Black" Foreground="#00FF00" FontFamily="Consolas">
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" Background="#0A0F0A" Padding="12,8" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Left">
+          <TextBlock Text="CC SPEC CHECKER" FontSize="20" FontWeight="Bold" Foreground="#00FF00"/>
+          <TextBlock Text="Computer Corner — correct VRAM, real temperatures, honest numbers" FontSize="11" Opacity="0.8" Foreground="#00FF00"/>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+          <Button Content="Refresh" Click="OnRefresh"/>
+          <Button Content="Copy" Click="OnCopy"/>
+          <Button Content="Save snapshot" Click="OnSaveSnapshot"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
+
+    <Grid Grid.Row="1" ColumnDefinitions="220,*">
+      <Border Grid.Column="0" Background="#050705" BorderBrush="#1E521E" BorderThickness="0,0,1,0">
+        <ListBox x:Name="CategoryList" SelectionChanged="OnCategoryChanged"
+                 Background="Transparent" BorderThickness="0" FontSize="14">
+          <ListBoxItem Content="Summary" IsSelected="True"/>
+          <ListBoxItem Content="Operating System"/>
+          <ListBoxItem Content="CPU"/>
+          <ListBoxItem Content="RAM"/>
+          <ListBoxItem Content="Motherboard"/>
+          <ListBoxItem Content="Graphics"/>
+          <ListBoxItem Content="Storage"/>
+        </ListBox>
+      </Border>
+
+      <TextBox x:Name="ReportBox" Grid.Column="1" Background="#050705" Foreground="#00FF00"
+               FontFamily="Consolas" FontSize="13" IsReadOnly="True" BorderThickness="0"
+               AcceptsReturn="True" TextWrapping="Wrap" Margin="8"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               ScrollViewer.HorizontalScrollBarVisibility="Disabled"/>
+    </Grid>
+
+    <Border Grid.Row="2" Background="#0A0F0A" Padding="8,4" BorderBrush="#1E521E" BorderThickness="0,1,0,0">
+      <DockPanel>
+        <TextBlock x:Name="StatusText" Text="Ready." Foreground="#00FF00" VerticalAlignment="Center"/>
+        <TextBlock Text="Read-only — this tool changes nothing on the machine." DockPanel.Dock="Right"
+                   Foreground="#00FF00" Opacity="0.6" VerticalAlignment="Center"/>
+      </DockPanel>
+    </Border>
+  </Grid>
+</Window>

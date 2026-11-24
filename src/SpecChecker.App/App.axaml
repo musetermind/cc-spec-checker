@@ -1,0 +1,36 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="SpecChecker.App.App"
+             RequestedThemeVariant="Dark">
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Button">
+      <Setter Property="Background" Value="#0A0F0A"/>
+      <Setter Property="Foreground" Value="#FFFFFF"/>
+      <Setter Property="BorderBrush" Value="#1E521E"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="3"/>
+      <Setter Property="Padding" Value="10,7"/>
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="FontFamily" Value="Consolas"/>
+    </Style>
+    <Style Selector="Button:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#0E1A0E"/>
+      <Setter Property="BorderBrush" Value="#00FF00"/>
+    </Style>
+    <Style Selector="TextBox">
+      <Setter Property="Background" Value="#050705"/>
+      <Setter Property="Foreground" Value="#00FF00"/>
+      <Setter Property="BorderBrush" Value="#1E521E"/>
+      <Setter Property="FontFamily" Value="Consolas"/>
+    </Style>
+    <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+      <Setter Property="Background" Value="#1E3A1E"/>
+    </Style>
+  </Application.Styles>
+  <Application.Resources>
+    <SolidColorBrush x:Key="NeonBrush">#00FF00</SolidColorBrush>
+    <SolidColorBrush x:Key="AmberBrush">#FFB020</SolidColorBrush>
+    <SolidColorBrush x:Key="PanelBrush">#0A0F0A</SolidColorBrush>
+  </Application.Resources>
+</Application>
