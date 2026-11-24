@@ -22,6 +22,9 @@ public static class SpecService
         // WMI AdapterRAM (32-bit, only trustworthy below 4GB).
         var dxgiVram = DxgiVram.GetVramByPciId();
         var (vramByPci, vramByName) = GetVramFromRegistry();
+        // GPU temperature via NVAPI (NVIDIA driver, no kernel driver needed).
+        var nvTemps = NvApiTemp.GetGpuTemps();
+        var gpuIndex = 0;
         foreach (var s in Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
         {
             var name = s["Name"]?.ToString() ?? "?";
@@ -45,7 +48,11 @@ public static class SpecService
                     vram = $" - {b / 1024 / 1024}MB VRAM";
                 }
             }
-            sb.AppendLine($"  {name}{vram}");
+            var temp = "";
+            if (nvTemps.TryGetValue(gpuIndex, out var nv) && nv.tempC >= 0)
+                temp = $" - {nv.tempC}C";
+            sb.AppendLine($"  {name}{vram}{temp}");
+            gpuIndex++;
         }
 
         sb.AppendLine("\nMEMORY (RAM)");
