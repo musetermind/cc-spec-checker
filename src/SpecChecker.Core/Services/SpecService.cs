@@ -85,6 +85,21 @@ public static class SpecService
             sb.AppendLine($"  {s["Model"]} - {size} [{s["MediaType"]?.ToString()?.Trim()}]");
         }
 
+        sb.AppendLine("\nDRIVE HEALTH (SMART)");
+        var health = SmartHealth.GetDriveHealth();
+        if (health.Count == 0)
+        {
+            sb.AppendLine("  SMART data not available (needs administrator rights)");
+        }
+        else
+        {
+            foreach (var h in health)
+            {
+                var status = h.PredictFailure ? "FAILURE PREDICTED" : "OK";
+                sb.AppendLine($"  {h.InstanceName} - {status} ({SmartHealth.ReasonLabel(h.Reason)})");
+            }
+        }
+
         sb.AppendLine("\nOPERATING SYSTEM");
         foreach (var s in Query("SELECT Caption, Version, BuildNumber, OSArchitecture FROM Win32_OperatingSystem"))
             sb.AppendLine($"  {s["Caption"]} ({s["OSArchitecture"]}) - Build {s["BuildNumber"]}");

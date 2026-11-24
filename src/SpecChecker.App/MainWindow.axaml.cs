@@ -17,6 +17,7 @@ public partial class MainWindow : Window
         ["Motherboard"] = "MOTHERBOARD",
         ["Graphics"] = "GRAPHICS CARD",
         ["Storage"] = "STORAGE DRIVES",
+        ["Drive Health"] = "DRIVE HEALTH (SMART)",
     };
 
     public MainWindow()
