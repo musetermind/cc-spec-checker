@@ -1,2 +1,2 @@
-# cc-spec-checker
-CC Spec Checker — a free, portable, honest Windows hardware spec viewer: correct VRAM via DXGI, real-time temps via LibreHardwareMonitor + opt-in PawnIO, never a fake number.
+# CC Spec Checker
+A free, portable Windows hardware spec viewer from Computer Corner. Correct VRAM, real-time temperatures, honest numbers.
