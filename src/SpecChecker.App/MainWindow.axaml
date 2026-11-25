@@ -17,6 +17,7 @@
           <Button Content="Refresh" Click="OnRefresh"/>
           <Button Content="Copy" Click="OnCopy"/>
           <Button Content="Save snapshot" Click="OnSaveSnapshot"/>
+          <Button x:Name="AdminButton" Content="Restart as administrator" Click="OnRestartAsAdmin"/>
         </StackPanel>
       </DockPanel>
     </Border>

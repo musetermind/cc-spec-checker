@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Security.Principal;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using SpecChecker.Core.Services;
@@ -23,7 +25,56 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // The app runs unelevated by default (choice, not forced admin):
+        // the core readings work without elevation. Offer the restart
+        // button only when we are NOT already elevated — when already
+        // admin it would be pointless, so hide it.
+        AdminButton.IsVisible = !IsElevated();
         LoadReport();
+    }
+
+    /// <summary>True when this process is running with administrator rights.</summary>
+    private static bool IsElevated()
+    {
+        using var identity = WindowsIdentity.GetCurrent();
+        return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    /// <summary>
+    /// Relaunch this exe elevated (UAC prompt) and close the current
+    /// unelevated instance. If the user cancels the UAC prompt, stay
+    /// in this instance and say so — nothing is lost.
+    /// </summary>
+    private void OnRestartAsAdmin(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath;
+            if (string.IsNullOrEmpty(exe))
+            {
+                StatusText.Text = "Could not find this app's path — run it as administrator manually.";
+                return;
+            }
+            var start = new ProcessStartInfo(exe)
+            {
+                UseShellExecute = true,
+                Verb = "runas", // triggers the UAC prompt
+            };
+            Process.Start(start);
+            // The elevated copy is starting; close this one.
+            Close();
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // 1223 = ERROR_CANCELLED — the user said No to the UAC prompt.
+            Logger.Write("Restart as administrator cancelled by the user.");
+            StatusText.Text = "Administrator restart cancelled — still running unelevated.";
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("Restart as administrator failed: " + ex.Message);
+            StatusText.Text = "Could not restart as administrator — see log.";
+        }
     }
 
     private void LoadReport()
