@@ -31,9 +31,17 @@ public static class SpecService
         var (vramByPci, vramByName) = GetVramFromRegistry();
         // GPU temperature via NVAPI (NVIDIA driver, no kernel driver needed).
         var nvTemps = NvApiTemp.GetGpuTemps();
-        // GPU temperature via ADL (AMD driver, no kernel driver needed),
-        // keyed by adapter name for matching against the WMI card name.
-        var adlTemps = AdlTemp.GetGpuTemps();
+        // ADL (AMD GPU temp) is DISABLED: AdlTemp.GetGpuTemps() crashed the
+        // app with 0xc0000005 (access violation) on real AMD hardware in
+        // BOTH build (5) and build (6). The CRT malloc/free fix (d3e85e2)
+        // did not resolve it, so the heap was not the (only) cause — the
+        // fault is inside the ADL calls themselves (suspect: the
+        // AdapterInfo_Get inputSize, or the AdapterInfo struct layout).
+        // Do NOT re-enable ADL until the crash cause is found AND the code
+        // is proven on real AMD hardware. AMD cards will show no temp
+        // (same honest "not available" behaviour as CPU temp without
+        // PawnIO) rather than crash the whole app. The AdlTemp.cs file is
+        // kept in the repo for that future investigation.
         var gpuIndex = 0;
         foreach (var s in Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
         {
@@ -62,8 +70,8 @@ public static class SpecService
             var temp = "";
             if (nvTemps.TryGetValue(gpuIndex, out var nv) && nv.tempC >= 0)
                 temp = $" - {nv.tempC}C";
-            else if (TryGetAdlTemp(name, adlTemps, out var adlC))
-                temp = $" - {adlC}C";
+            // ADL branch removed (see the note above): AMD temp is disabled
+            // until the ADL crash is fixed and proven on AMD hardware.
             sb.AppendLine($"  {name}{vram}{temp}");
             gpuIndex++;
         }
@@ -166,28 +174,6 @@ public static class SpecService
         return m.Success
             ? (m.Groups[1].Value + "&" + m.Groups[2].Value).ToUpperInvariant()
             : null;
-    }
-
-    /// <summary>Match a WMI card name against the ADL adapter names.
-    /// Exact match first, then a contains-match either way (ADL sometimes
-    /// reports "Radeon RX 7900 XT" where WMI reports "AMD Radeon RX 7900 XT").
-    /// Returns false when no ADL entry matches — the card is not AMD, or ADL
-    /// could not read it.</summary>
-    private static bool TryGetAdlTemp(string wmiName, Dictionary<string, int> adlTemps, out int tempC)
-    {
-        tempC = 0;
-        if (adlTemps.Count == 0 || string.IsNullOrWhiteSpace(wmiName)) return false;
-        if (adlTemps.TryGetValue(wmiName, out tempC)) return true;
-        foreach (var kv in adlTemps)
-        {
-            if (wmiName.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)
-                || kv.Key.Contains(wmiName, StringComparison.OrdinalIgnoreCase))
-            {
-                tempC = kv.Value;
-                return true;
-            }
-        }
-        return false;
     }
 
     private static string FormatVram(ulong bytes)
