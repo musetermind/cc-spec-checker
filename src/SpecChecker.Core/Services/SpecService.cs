@@ -100,14 +100,24 @@ public static class SpecService
         }
 
         sb.AppendLine("\nDRIVE HEALTH (SMART)");
-        var health = SmartHealth.GetDriveHealth();
-        if (health.Count == 0)
+        var health = SmartHealth.GetDriveHealthDetailed();
+        if (health.Drives.Count == 0)
         {
-            sb.AppendLine("  SMART data not available (needs administrator rights)");
+            // Say WHY it is not available. The old message blamed admin
+            // rights for every failure, but the bench proved that wrong:
+            // even run as administrator the WMI class returns no rows
+            // for the NVMe + USB drives, because they do not expose it.
+            var why = health.Failure switch
+            {
+                SmartHealth.NoDataReason.AccessDenied => "needs administrator rights",
+                SmartHealth.NoDataReason.NotExposed => "not exposed by these drives via WMI (NVMe/USB drives often do not publish it)",
+                _ => "could not be read",
+            };
+            sb.AppendLine($"  SMART data not available ({why})");
         }
         else
         {
-            foreach (var h in health)
+            foreach (var h in health.Drives)
             {
                 var status = h.PredictFailure ? "FAILURE PREDICTED" : "OK";
                 sb.AppendLine($"  {h.InstanceName} - {status} ({SmartHealth.ReasonLabel(h.Reason)})");

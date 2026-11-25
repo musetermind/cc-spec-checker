@@ -16,7 +16,22 @@ internal static class SmartHealth
 {
     public record DriveHealth(string InstanceName, bool PredictFailure, uint Reason);
 
-    public static List<DriveHealth> GetDriveHealth()
+    /// <summary>Why the SMART read produced no drives.</summary>
+    public enum NoDataReason
+    {
+        /// <summary>The query worked but no drive exposed the WMI class
+        /// (common for NVMe drives and USB sticks — they do not publish
+        /// MSStorageDriver_FailurePredictStatus). Not an admin problem.</summary>
+        NotExposed,
+        /// <summary>The WMI read was denied — elevation is genuinely needed.</summary>
+        AccessDenied,
+        /// <summary>Some other failure (WMI unavailable, unexpected error).</summary>
+        Other,
+    }
+
+    public record ReadResult(List<DriveHealth> Drives, NoDataReason? Failure);
+
+    public static ReadResult GetDriveHealthDetailed()
     {
         var list = new List<DriveHealth>();
         try
@@ -35,11 +50,19 @@ internal static class SmartHealth
         }
         catch (Exception ex)
         {
-            // Admin-gated or unsupported: caller shows "not available".
+            // Distinguish a real access problem from any other failure,
+            // so the report never blames admin rights for a drive that
+            // simply does not expose this WMI class.
             Logger.Write("SMART health read failed: " + ex.Message);
+            var denied = ex is UnauthorizedAccessException
+                || ex.Message.Contains("Access is denied", StringComparison.OrdinalIgnoreCase)
+                || ex.Message.Contains("Access denied", StringComparison.OrdinalIgnoreCase);
+            return new ReadResult(list, denied ? NoDataReason.AccessDenied : NoDataReason.Other);
         }
-        return list;
+        return new ReadResult(list, list.Count == 0 ? NoDataReason.NotExposed : null);
     }
+
+    public static List<DriveHealth> GetDriveHealth() => GetDriveHealthDetailed().Drives;
 
     /// <summary>Short human label for a FailurePredictStatus Reason code.</summary>
     public static string ReasonLabel(uint reason) => reason switch
