@@ -41,7 +41,7 @@
              stays here — it hides when already elevated, so it does not
              belong in a fixed grid. -->
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
-          <Button x:Name="AdminButton" Content="Restart as administrator" Click="OnRestartAsAdmin"/>
+          <Button x:Name="AdminButton" Click="OnRestartAsAdmin"/>
         </StackPanel>
       </DockPanel>
     </Border>

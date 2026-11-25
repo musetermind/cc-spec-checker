@@ -1,8 +1,27 @@
 # Changelog
 
 All notable changes to CC Spec Checker. Versions follow the build order:
-build 1 is 0.1, build 2 is 0.2, and so on. The version number is shown in
-the window title and the header.
+build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
+0.x series ends here, the app is stable, so the next release moves to
+1.x. The version number is shown in the window title and the header.
+
+## 1.8 — 2026-11-25
+
+- Icons on every card and every tool-strip button (Sithu): vector icons
+  from Material Design Icons (Apache 2.0) — a chip for the processor, a
+  card for the graphics, a stick for the memory, a board for the
+  motherboard, a drive for storage, the Windows logo for the OS — and
+  matching icons on Refresh, Copy, Save snapshot and the Windows tools,
+  plus a shield on the "Restart as administrator" button. They take the
+  theme colour, so they stay green in both themes.
+- The MEMORY line no longer says "Single Channel" (Sithu): a Single
+  reading is not trustworthy — some boards report InterleaveDataDepth 1
+  even when the memory controller runs dual — and a 2-stick count is a
+  guess, not a measurement. The channel is shown only when WMI
+  positively reports a multi-way interleave (Dual / Quad); otherwise
+  the line shows nothing.
+- Version 1.8: the 0.x series ends here — the app is stable, so build 18
+  ships as 1.8.
 
 ## 0.17 — 2026-11-25
 

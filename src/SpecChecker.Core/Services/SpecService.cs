@@ -273,37 +273,25 @@ public static class SpecService
     }
 
     /// <summary>
-    /// Memory channel mode: "Dual Channel", "Single Channel", "Quad
-    /// Channel" (null when there are no sticks). WMI's InterleaveDataDepth
-    /// is the real signal when the BIOS reports it (2 = dual, 4 = quad,
-    /// 1 = single). When it reports 0 for every stick — common on
-    /// consumer boards — fall back to the stick count: two or more sticks
-    /// in a machine is dual channel in the standard configuration (the
-    /// bench is a 2-slot board, where two sticks can only be dual). The
-    /// raw depth goes to the log so it is auditable which path fired.
+    /// The channel mode to show on the MEMORY summary line — and ONLY
+    /// when WMI positively reports a multi-way interleave (Sithu, 1.8).
+    /// A "Single Channel" reading is never shown: on some boards the
+    /// BIOS reports InterleaveDataDepth 1 even when the memory
+    /// controller is running dual, so a Single reading is not
+    /// trustworthy — and a 2-stick count is a guess, not a measurement
+    /// (a board with both sticks in one channel's slots runs single).
+    /// So: depth >= 4 -> Quad, depth 2-3 -> Dual, anything else (0, 1
+    /// or unknown) -> null, and the line shows no channel at all.
     /// </summary>
     private static string? ChannelModeName(int stickCount, uint maxInterleaveDepth)
     {
-        string? mode;
-        if (maxInterleaveDepth > 0)
+        string? mode = maxInterleaveDepth switch
         {
-            mode = maxInterleaveDepth switch
-            {
-                >= 4 => "Quad Channel",
-                >= 2 => "Dual Channel",
-                _ => "Single Channel",
-            };
-        }
-        else
-        {
-            mode = stickCount switch
-            {
-                0 => null,
-                1 => "Single Channel",
-                _ => "Dual Channel",
-            };
-        }
-        Logger.Write($"RAM channel: sticks={stickCount}, max InterleaveDataDepth={maxInterleaveDepth} -> {mode ?? "unknown"}.");
+            >= 4 => "Quad Channel",
+            >= 2 => "Dual Channel",
+            _ => null,
+        };
+        Logger.Write($"RAM channel: sticks={stickCount}, max InterleaveDataDepth={maxInterleaveDepth} -> {mode ?? "not shown"}.");
         return mode;
     }
 

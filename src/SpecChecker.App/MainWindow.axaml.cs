@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Security.Principal;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Shapes;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
@@ -97,6 +99,10 @@ public partial class MainWindow : Window
         // button only when we are NOT already elevated — when already
         // admin it would be pointless, so hide it.
         AdminButton.IsVisible = !IsElevated();
+        // The admin button gets a shield icon next to its label (Sithu,
+        // 1.8); the icon's fill follows the button's foreground via
+        // binding, so it repaints with the theme like the text does.
+        AdminButton.Content = IconButtonContent(Icons.Admin, "Restart as administrator", 14);
         // Theme first (before the first LoadReport builds the cards, so
         // the dashboard renders in the right palette from the start).
         _themeMode = ThemeSettings.Load();
@@ -174,6 +180,57 @@ public partial class MainWindow : Window
         if (_model != null) ContentArea.Content = BuildSummary(_model);
     }
 
+    /// <summary>An icon for a card title: a vector path in the title
+    /// colour. Cards are rebuilt on every theme change (ApplyPalette
+    /// calls BuildSummary), so the fill can be set at build time.</summary>
+    private Avalonia.Controls.Shapes.Path CardIcon(Geometry icon)
+    {
+        return new Avalonia.Controls.Shapes.Path
+        {
+            Data = icon,
+            Fill = _palette.TitleFg,
+            Width = 16,
+            Height = 16,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+    }
+
+    /// <summary>An icon for a button label: a vector path whose fill is
+    /// bound to the button's foreground, so it follows the theme exactly
+    /// like the text. Buttons are built once, not rebuilt on theme
+    /// change, so a fixed fill would go stale.</summary>
+    private static Avalonia.Controls.Shapes.Path ButtonIcon(Geometry icon, double size)
+    {
+        var p = new Avalonia.Controls.Shapes.Path
+        {
+            Data = icon,
+            Width = size,
+            Height = size,
+            Stretch = Stretch.Uniform,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        p.Bind(Shape.FillProperty, new Binding("Foreground")
+        {
+            RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor)
+            {
+                AncestorType = typeof(Button),
+                AncestorLevel = 1,
+            },
+        });
+        return p;
+    }
+
+    /// <summary>A button's content: icon + label in a row, centred as a
+    /// group by the button.</summary>
+    private static StackPanel IconButtonContent(Geometry icon, string label, double size)
+    {
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        row.Children.Add(ButtonIcon(icon, size));
+        row.Children.Add(new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center });
+        return row;
+    }
+
     /// <summary>One-time button setup: size, shape, hand cursor, hover
     /// handlers, and registration for palette repaints.</summary>
     private void StyleButton(Button b, double fontSize, Thickness padding)
@@ -249,26 +306,26 @@ public partial class MainWindow : Window
             ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"),
             RowDefinitions = new RowDefinitions("Auto,Auto"),
         };
-        AddStripButton(grid, "Refresh", "refresh", 0, 0);
-        AddStripButton(grid, "Copy", "copy", 1, 0);
-        AddStripButton(grid, "Save snapshot", "save", 2, 0);
-        AddStripButton(grid, "Device Manager", "devmgmt", 3, 0);
-        AddStripButton(grid, "Disk Management", "diskmgmt", 4, 0);
-        AddStripButton(grid, "Task Manager", "taskmgr", 5, 0);
-        AddStripButton(grid, "Settings", "settings", 0, 1);
-        AddStripButton(grid, "File Explorer", "explorer", 1, 1);
-        AddStripButton(grid, "Recycle Bin", "recyclebin", 2, 1);
-        AddStripButton(grid, "Disk Cleanup", "cleanmgr", 3, 1);
-        AddStripButton(grid, "Resource Monitor", "resmon", 4, 1);
-        AddStripButton(grid, "Reliability Monitor", "perfmon", 5, 1);
+        AddStripButton(grid, "Refresh", "refresh", Icons.Refresh, 0, 0);
+        AddStripButton(grid, "Copy", "copy", Icons.Copy, 1, 0);
+        AddStripButton(grid, "Save snapshot", "save", Icons.Save, 2, 0);
+        AddStripButton(grid, "Device Manager", "devmgmt", Icons.DeviceManager, 3, 0);
+        AddStripButton(grid, "Disk Management", "diskmgmt", Icons.Storage, 4, 0);
+        AddStripButton(grid, "Task Manager", "taskmgr", Icons.TaskManager, 5, 0);
+        AddStripButton(grid, "Settings", "settings", Icons.Settings, 0, 1);
+        AddStripButton(grid, "File Explorer", "explorer", Icons.FileExplorer, 1, 1);
+        AddStripButton(grid, "Recycle Bin", "recyclebin", Icons.RecycleBin, 2, 1);
+        AddStripButton(grid, "Disk Cleanup", "cleanmgr", Icons.DiskCleanup, 3, 1);
+        AddStripButton(grid, "Resource Monitor", "resmon", Icons.ResourceMonitor, 4, 1);
+        AddStripButton(grid, "Reliability Monitor", "perfmon", Icons.ReliabilityMonitor, 5, 1);
         ToolStripArea.Content = grid;
     }
 
-    private void AddStripButton(Grid grid, string label, string tag, int col, int row)
+    private void AddStripButton(Grid grid, string label, string tag, Geometry icon, int col, int row)
     {
         var b = new Button
         {
-            Content = label,
+            Content = IconButtonContent(icon, label, 14),
             Tag = tag,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             // 6px gaps between buttons, none at the strip's right/bottom edge.
@@ -391,7 +448,7 @@ public partial class MainWindow : Window
                 ? "temp not available (PawnIO driver not installed)"
                 : "Restart as Admin to check CPU temperature", null));
         }
-        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuLines));
+        cards.Add(MakeCard(Icons.Cpu, "PROCESSOR", Shorten(m.Cpu.Name), cpuLines));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
@@ -410,11 +467,11 @@ public partial class MainWindow : Window
                     + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
                 gpuLines.Add((temp, TempBrush(gpu.TempC.Value)));
             }
-            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gpuLines));
+            cards.Add(MakeCard(Icons.Graphics, "GRAPHICS CARD", vram + " VRAM", gpuLines));
         }
         else
         {
-            cards.Add(MakeCard("GRAPHICS CARD", "No GPU found", new List<(string Text, IBrush? Brush)>()));
+            cards.Add(MakeCard(Icons.Graphics, "GRAPHICS CARD", "No GPU found", new List<(string Text, IBrush? Brush)>()));
         }
 
         // Memory card — summary line, then one line per stick.
@@ -435,7 +492,7 @@ public partial class MainWindow : Window
         }
         if (m.Ram.TempC.HasValue)
             ramLines.Add(($"{m.Ram.TempC.Value}C", TempBrush(m.Ram.TempC.Value)));
-        cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramLines));
+        cards.Add(MakeCard(Icons.Memory, "MEMORY", $"{totalGb} GB", ramLines));
 
         // Motherboard card
         var boardHead = string.IsNullOrWhiteSpace(m.Board.Product) ? "Unknown board" : m.Board.Product;
@@ -446,7 +503,7 @@ public partial class MainWindow : Window
         };
         if (m.Board.TempC.HasValue)
             boardLines.Add(($"{m.Board.TempC.Value}C", TempBrush(m.Board.TempC.Value)));
-        cards.Add(MakeCard("MOTHERBOARD", boardHead, boardLines));
+        cards.Add(MakeCard(Icons.Board, "MOTHERBOARD", boardHead, boardLines));
 
         // Storage card — one line per drive (model · size · type), plus
         // one muted line per volume with its letter, used and free space
@@ -463,12 +520,12 @@ public partial class MainWindow : Window
         var storageHead = m.Drives.Count > 0
             ? $"{m.Drives.Count} drive{(m.Drives.Count == 1 ? "" : "s")}"
             : "No drives found";
-        cards.Add(MakeCard("STORAGE", storageHead, storageLines));
+        cards.Add(MakeCard(Icons.Storage, "STORAGE", storageHead, storageLines));
 
         // Operating system card
         var osHead = string.IsNullOrWhiteSpace(m.Os.Caption) ? "Unknown OS" : ShortOs(m.Os.Caption);
         var osDetail = $"{m.Os.Architecture} · Build {m.Os.BuildNumber} · {(m.Os.IsActivated ? "Activated" : "Not activated")}";
-        cards.Add(MakeCard("OPERATING SYSTEM", osHead, new List<(string Text, IBrush? Brush)> { (osDetail, null) }));
+        cards.Add(MakeCard(Icons.Os, "OPERATING SYSTEM", osHead, new List<(string Text, IBrush? Brush)> { (osDetail, null) }));
 
         for (var i = 0; i < cards.Count; i++)
         {
@@ -481,22 +538,27 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// One dashboard card: a small muted title, a large bright headline,
-    /// and a few short detail lines — one fact per line, so a glance is
-    /// enough (Sithu, 0.13). A line takes the given brush when one is
-    /// passed (a temperature uses its colour band); otherwise the soft
-    /// green. Cards are display only: no clicks, no sections to go to.
+    /// One dashboard card: a small muted title with an icon, a large
+    /// bright headline, and a few short detail lines — one fact per line,
+    /// so a glance is enough (Sithu, 0.13). A line takes the given brush
+    /// when one is passed (a temperature uses its colour band); otherwise
+    /// the soft green. Cards are display only: no clicks, no sections to
+    /// go to. The icon is a vector path in the title colour (Sithu, 1.8).
     /// </summary>
-    private Border MakeCard(string title, string headline, List<(string Text, IBrush? Brush)> lines)
+    private Border MakeCard(Geometry? icon, string title, string headline, List<(string Text, IBrush? Brush)> lines)
     {
         var stack = new StackPanel { Spacing = 6 };
-        stack.Children.Add(new TextBlock
+        var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        if (icon != null) titleRow.Children.Add(CardIcon(icon));
+        titleRow.Children.Add(new TextBlock
         {
             Text = title,
             Foreground = _palette.TitleFg,
             FontSize = 11,
             FontWeight = FontWeight.Bold,
+            VerticalAlignment = VerticalAlignment.Center,
         });
+        stack.Children.Add(titleRow);
         stack.Children.Add(new TextBlock
         {
             Text = headline,
@@ -577,7 +639,7 @@ public partial class MainWindow : Window
         try
         {
             var dir = AppPaths.EnsureSnapshots();
-            var path = Path.Combine(dir, $"specchecker-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
+            var path = System.IO.Path.Combine(dir, $"specchecker-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
             File.WriteAllText(path, _fullReport);
             StatusText.Text = $"Snapshot saved: {path}";
             Logger.Write("Snapshot saved: " + path);

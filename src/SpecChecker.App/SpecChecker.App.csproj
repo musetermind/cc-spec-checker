@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Assembly/file version. Keep in step with AppInfo.Version (it
          cannot read that const); bump both on every release. -->
-    <Version>0.17.0</Version>
+    <Version>1.8.0</Version>
     <!-- Runs UNELEVATED by default (no ApplicationManifest): WMI + DXGI +
          NVAPI all work unelevated. Only SMART and the opt-in PawnIO install
          need elevation, and those go through a helper/relaunch. -->
