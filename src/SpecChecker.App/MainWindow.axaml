@@ -44,9 +44,8 @@
       </DockPanel>
     </Border>
 
-    <!-- Content area: ONE scrolling page — the dashboard cards on top,
-         then every detail section below. No tabs: everything is visible
-         by scrolling (Sithu, build 11). -->
+    <!-- Content area: the dashboard cards — each one carries all its
+         info, so a glance is enough (Sithu, 0.13). No detail sections. -->
     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
       <ContentControl x:Name="ContentArea" Margin="16"/>

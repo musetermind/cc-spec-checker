@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Security.Principal;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -12,19 +11,15 @@ namespace SpecChecker.App;
 
 /// <summary>
 /// Modern dashboard UI. The engine hands us a structured SpecModel; this
-/// window renders it on ONE scrolling page: the cards on top, then every
-/// detail section below (no tabs — Sithu, build 11). Clicking a card
-/// scrolls to its section. The plain-text report still exists for Copy
-/// and Save snapshot.
+/// window renders it as a dashboard of cards — and ONLY cards (Sithu,
+/// 0.13: no separate sections under the cards). Each card carries all
+/// its info in a few short lines, so a glance is enough. The plain-text
+/// report still exists for Copy and Save snapshot.
 /// </summary>
 public partial class MainWindow : Window
 {
     private SpecModel? _model;
     private string _fullReport = "";
-    // The detail sections on the page, keyed so a card click can scroll
-    // to its section ("CPU", "Graphics", "RAM", "Motherboard", "Storage",
-    // "Operating System").
-    private readonly Dictionary<string, Control> _sections = new(StringComparer.OrdinalIgnoreCase);
 
     // Colours for the green-on-black identity, refined: cards sit a touch
     // lighter than the page, borders are a muted green, headlines are the
@@ -81,7 +76,7 @@ public partial class MainWindow : Window
             StatusText.Text = "Reading hardware...";
             _model = SpecService.GetModel();
             _fullReport = SpecService.GetReport();
-            ContentArea.Content = BuildPage(_model);
+            ContentArea.Content = BuildSummary(_model);
             StatusText.Text = $"Ready. Read at {DateTime.Now:HH:mm:ss}.";
         }
         catch (Exception ex)
@@ -100,48 +95,15 @@ public partial class MainWindow : Window
         }
     }
 
-    // ----- One page: cards on top, every section below -----
-
-    /// <summary>
-    /// The whole page: the dashboard cards, then every detail section
-    /// stacked in the same scroll (no tabs). Card clicks scroll to
-    /// their section via _sections.
-    /// </summary>
-    private Control BuildPage(SpecModel m)
-    {
-        _sections.Clear();
-        var page = new StackPanel { Spacing = 0 };
-        page.Children.Add(BuildSummary(m));
-        AddSection(page, "CPU", "Processor", CpuRows(m));
-        AddSection(page, "Graphics", "Graphics Card", GpuRows(m));
-        AddSection(page, "RAM", "Memory (RAM)", RamRows(m));
-        AddSection(page, "Motherboard", "Motherboard", BoardRows(m));
-        AddSection(page, "Storage", "Storage Drives", DriveRows(m));
-        AddSection(page, "Operating System", "Operating System", OsRows(m));
-        return page;
-    }
-
-    private void AddSection(StackPanel page, string key, string title, List<(string Label, string Value, IBrush? ValueBrush)> rows)
-    {
-        var section = BuildDetail(title, rows);
-        section.Margin = new Thickness(0, 28, 0, 0);
-        _sections[key] = section;
-        page.Children.Add(section);
-    }
-
-    /// <summary>Scroll the page so the named section is visible (a card was clicked).</summary>
-    private void ScrollToSection(string key)
-    {
-        if (_sections.TryGetValue(key, out var section))
-            section.BringIntoView();
-    }
-
-    // ----- Dashboard (Summary) -----
+    // ----- Dashboard (the whole UI) -----
 
     private Control BuildSummary(SpecModel m)
     {
         // Two-column dashboard grid (UniformGrid is not available in this
         // Avalonia build, so a plain Grid with explicit placement is used).
+        // The cards ARE the UI: each one carries all its info in a few
+        // short lines (Sithu, 0.13 — "a glance is enough"). No detail
+        // sections below the cards, no clicks.
         var grid = new Grid
         {
             ColumnDefinitions = new ColumnDefinitions("*,*"),
@@ -150,87 +112,100 @@ public partial class MainWindow : Window
 
         var cards = new List<Control>();
 
-        // Processor card — cores, threads and cache on the first line,
-        // and the live temp on a second line under it (Sithu: the temp
-        // was missed when the card went specs-only in build 11). The
-        // temp line keeps its colour band; when there is no temp the
-        // line says what to do instead ("restart as admin...").
-        var cpuDetail = "";
+        // Processor card — specs on the first line, the live temp on a
+        // second line under it. The temp line keeps its colour band;
+        // when there is no temp the line says what to do instead
+        // ("restart as admin...").
+        var cpuLines = new List<(string Text, IBrush? Brush)>();
         if (m.Cpu.Cores > 0)
         {
-            cpuDetail = $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads";
+            var specs = $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads";
             var cache = SpecService.FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
             if (!string.IsNullOrEmpty(cache))
-                cpuDetail += $" · {cache}";
+                specs += $" · {cache}";
+            cpuLines.Add((specs, null));
         }
-        string? cpuTempLine;
-        IBrush? cpuTempBrush;
         if (m.Cpu.PackageTempC.HasValue)
         {
-            cpuTempLine = $"{m.Cpu.PackageTempC.Value}C package";
+            var temp = $"{m.Cpu.PackageTempC.Value}C package";
             if (m.Cpu.HottestCoreTempC.HasValue
                 && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
-                cpuTempLine += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
-            cpuTempBrush = TempBrush(m.Cpu.PackageTempC.Value);
+                temp += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
+            cpuLines.Add((temp, TempBrush(m.Cpu.PackageTempC.Value)));
         }
         else
         {
-            cpuTempLine = SpecService.IsElevated()
+            cpuLines.Add((SpecService.IsElevated()
                 ? "temp not available (PawnIO driver not installed)"
-                : "restart as admin to check cpu temp";
-            cpuTempBrush = null;
+                : "restart as admin to check cpu temp", null));
         }
-        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuDetail, () => ScrollToSection("CPU"),
-            detail2: cpuTempLine, detail2Brush: cpuTempBrush));
+        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuLines));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
         if (gpu != null)
         {
             var vram = gpu.VramText ?? "VRAM unknown";
-            var gDetail = gpu.Name
-                + (gpu.TempC.HasValue ? $" · {gpu.TempC.Value}C" : "")
-                + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
-            var gpuDetailBrush = gpu.TempC.HasValue ? TempBrush(gpu.TempC.Value) : (IBrush?)null;
-            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gDetail, () => ScrollToSection("Graphics"), gpuDetailBrush));
+            var gpuLines = new List<(string Text, IBrush? Brush)> { (gpu.Name, null) };
+            if (gpu.TempC.HasValue)
+            {
+                var temp = $"{gpu.TempC.Value}C"
+                    + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
+                gpuLines.Add((temp, TempBrush(gpu.TempC.Value)));
+            }
+            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gpuLines));
         }
         else
         {
-            cards.Add(MakeCard("GRAPHICS CARD", "No GPU found", "", () => ScrollToSection("Graphics")));
+            cards.Add(MakeCard("GRAPHICS CARD", "No GPU found", new List<(string Text, IBrush? Brush)>()));
         }
 
-        // Memory card
+        // Memory card — summary line, then one line per stick.
+        var ramLines = new List<(string Text, IBrush? Brush)>();
         var totalGb = m.Ram.TotalBytes / 1024 / 1024 / 1024;
         var speed = m.Ram.Sticks.FirstOrDefault()?.SpeedMHz ?? 0;
-        var ramDetail = m.Ram.Sticks.Count > 0
+        var ramSummary = m.Ram.Sticks.Count > 0
             ? $"{m.Ram.Sticks.Count} stick{(m.Ram.Sticks.Count == 1 ? "" : "s")}"
               + (!string.IsNullOrEmpty(m.Ram.MemoryType) ? $" · {m.Ram.MemoryType}" : "")
               + (speed > 0 ? $" @ {speed}MHz" : "")
-              + (m.Ram.TempC.HasValue ? $" · {m.Ram.TempC.Value}C" : "")
             : "No RAM sticks found";
-        cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramDetail, () => ScrollToSection("RAM")));
+        ramLines.Add((ramSummary, null));
+        foreach (var s in m.Ram.Sticks)
+        {
+            var vendor = string.IsNullOrWhiteSpace(s.Manufacturer) ? "" : $" · {s.Manufacturer}";
+            ramLines.Add(($"{s.CapacityBytes / 1024 / 1024 / 1024} GB @ {s.SpeedMHz}MHz{vendor}", null));
+        }
+        if (m.Ram.TempC.HasValue)
+            ramLines.Add(($"{m.Ram.TempC.Value}C", TempBrush(m.Ram.TempC.Value)));
+        cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramLines));
 
         // Motherboard card
         var boardHead = string.IsNullOrWhiteSpace(m.Board.Product) ? "Unknown board" : m.Board.Product;
-        var boardDetail = m.Board.Manufacturer
-            + (string.IsNullOrWhiteSpace(m.Board.BiosVersion) ? "" : $" · BIOS {m.Board.BiosVersion}")
-            + (m.Board.TempC.HasValue ? $" · {m.Board.TempC.Value}C" : "");
-        cards.Add(MakeCard("MOTHERBOARD", boardHead, boardDetail, () => ScrollToSection("Motherboard")));
+        var boardLines = new List<(string Text, IBrush? Brush)>
+        {
+            (m.Board.Manufacturer
+                + (string.IsNullOrWhiteSpace(m.Board.BiosVersion) ? "" : $" · BIOS {m.Board.BiosVersion}"), null),
+        };
+        if (m.Board.TempC.HasValue)
+            boardLines.Add(($"{m.Board.TempC.Value}C", TempBrush(m.Board.TempC.Value)));
+        cards.Add(MakeCard("MOTHERBOARD", boardHead, boardLines));
 
-        // Storage card (no drive temp — the LHM storage sensor is
-        // unreliable; see DriveInfo).
-        var first = m.Drives.FirstOrDefault();
-        var storageHead = first != null ? first.Model : "No drives found";
-        var storageDetail = first != null
-            ? $"{first.SizeText} · {first.MediaType}"
-              + (m.Drives.Count > 1 ? $" · {m.Drives.Count} drives" : "")
-            : "";
-        cards.Add(MakeCard("STORAGE", storageHead, storageDetail, () => ScrollToSection("Storage")));
+        // Storage card — one line per drive (model · size · type), so the
+        // count in the headline is backed by the full list on the card.
+        // No drive temp: the LHM storage sensor is unreliable (94C for a
+        // drive HD Sentinel reads at 39C), so none is shown.
+        var storageLines = new List<(string Text, IBrush? Brush)>();
+        foreach (var d in m.Drives)
+            storageLines.Add(($"{d.Model} · {d.SizeText} · {d.MediaType}", null));
+        var storageHead = m.Drives.Count > 0
+            ? $"{m.Drives.Count} drive{(m.Drives.Count == 1 ? "" : "s")}"
+            : "No drives found";
+        cards.Add(MakeCard("STORAGE", storageHead, storageLines));
 
         // Operating system card
         var osHead = string.IsNullOrWhiteSpace(m.Os.Caption) ? "Unknown OS" : ShortOs(m.Os.Caption);
         var osDetail = $"{m.Os.Architecture} · Build {m.Os.BuildNumber} · {(m.Os.IsActivated ? "Activated" : "Not activated")}";
-        cards.Add(MakeCard("OPERATING SYSTEM", osHead, osDetail, () => ScrollToSection("Operating System")));
+        cards.Add(MakeCard("OPERATING SYSTEM", osHead, new List<(string Text, IBrush? Brush)> { (osDetail, null) }));
 
         for (var i = 0; i < cards.Count; i++)
         {
@@ -244,11 +219,12 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// One dashboard card: a small muted title, a large bright headline,
-    /// and one or two smaller detail lines. Clicking it scrolls to that
-    /// section. A detail line takes the given brush when one is passed
-    /// (a temperature uses its colour band); otherwise the soft green.
+    /// and a few short detail lines — one fact per line, so a glance is
+    /// enough (Sithu, 0.13). A line takes the given brush when one is
+    /// passed (a temperature uses its colour band); otherwise the soft
+    /// green. Cards are display only: no clicks, no sections to go to.
     /// </summary>
-    private Border MakeCard(string title, string headline, string detail, Action onClick, IBrush? detailBrush = null, string? detail2 = null, IBrush? detail2Brush = null)
+    private Border MakeCard(string title, string headline, List<(string Text, IBrush? Brush)> lines)
     {
         var stack = new StackPanel { Spacing = 6 };
         stack.Children.Add(new TextBlock
@@ -266,28 +242,19 @@ public partial class MainWindow : Window
             FontWeight = FontWeight.Bold,
             TextWrapping = TextWrapping.Wrap,
         });
-        if (!string.IsNullOrWhiteSpace(detail))
+        foreach (var (text, brush) in lines)
         {
+            if (string.IsNullOrWhiteSpace(text)) continue;
             stack.Children.Add(new TextBlock
             {
-                Text = detail,
-                Foreground = detailBrush ?? DetailFg,
-                FontSize = 12,
-                TextWrapping = TextWrapping.Wrap,
-            });
-        }
-        if (!string.IsNullOrWhiteSpace(detail2))
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = detail2,
-                Foreground = detail2Brush ?? DetailFg,
+                Text = text,
+                Foreground = brush ?? DetailFg,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
             });
         }
 
-        var border = new Border
+        return new Border
         {
             Background = CardBg,
             BorderBrush = CardBorder,
@@ -295,192 +262,7 @@ public partial class MainWindow : Window
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(16, 14),
             Margin = new Thickness(0, 0, 12, 12),
-            Cursor = new Cursor(StandardCursorType.Hand),
             Child = stack,
-        };
-        border.PointerPressed += (_, _) => onClick();
-        return border;
-    }
-
-    // ----- Detail panels -----
-
-    /// <summary>A detail panel: a section title plus label/value rows.</summary>
-    private Control BuildDetail(string title, List<(string Label, string Value, IBrush? ValueBrush)> rows)
-    {
-        var stack = new StackPanel { Spacing = 0 };
-
-        stack.Children.Add(new TextBlock
-        {
-            Text = title.ToUpperInvariant(),
-            Foreground = TitleFg,
-            FontSize = 13,
-            FontWeight = FontWeight.Bold,
-            Margin = new Thickness(0, 4, 0, 12),
-        });
-
-        foreach (var (label, value, brush) in rows)
-            stack.Children.Add(MakeRow(label, value, brush));
-
-        if (rows.Count == 0)
-        {
-            stack.Children.Add(new TextBlock
-            {
-                Text = "Nothing to show here.",
-                Foreground = MutedFg,
-                FontSize = 13,
-            });
-        }
-
-        return stack;
-    }
-
-    /// <summary>One label/value row: label on the left (muted), value on the right
-    /// (bright green by default, or the given brush — temperatures use their
-    /// colour band), with a divider.</summary>
-    private Border MakeRow(string label, string value, IBrush? valueBrush = null)
-    {
-        var grid = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("220,*"),
-            Margin = new Thickness(0, 0, 0, 0),
-        };
-        grid.Children.Add(new TextBlock
-        {
-            Text = label,
-            Foreground = MutedFg,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 9, 12, 9),
-        });
-        Grid.SetColumn(grid.Children[0], 0);
-        var valueBlock = new TextBlock
-        {
-            Text = value,
-            Foreground = valueBrush ?? HeadlineFg,
-            FontSize = 13,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 9, 0, 9),
-        };
-        grid.Children.Add(valueBlock);
-        Grid.SetColumn(valueBlock, 1);
-
-        return new Border
-        {
-            BorderBrush = CardBorder,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = grid,
-        };
-    }
-
-    // ----- Rows per category -----
-
-    private static List<(string, string, IBrush?)> CpuRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>
-        {
-            ("Model", m.Cpu.Name, null),
-        };
-        if (m.Cpu.Cores > 0)
-            rows.Add(("Cores / Threads", $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads", null));
-        var cache = SpecService.FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
-        if (!string.IsNullOrEmpty(cache))
-            rows.Add(("Cache", cache, null));
-        // No Max clock row: WMI's MaxClockSpeed is the base clock, not
-        // the boost, so showing it as "max" was wrong (Sithu, build 11).
-        // CPU temp: when unelevated, point at the fix (restart as admin)
-        // instead of naming the driver — that is what actually unlocks it
-        // on this bench. When already elevated and still no temp, the
-        // driver is the real gap, so name it then.
-        if (m.Cpu.PackageTempC.HasValue)
-            rows.Add(("Package temperature", $"{m.Cpu.PackageTempC.Value}C", TempBrush(m.Cpu.PackageTempC.Value)));
-        else
-            rows.Add(("Package temperature",
-                SpecService.IsElevated()
-                    ? "not available (PawnIO driver not installed)"
-                    : "restart as admin to check cpu temp",
-                null));
-        if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
-            && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
-            rows.Add(("Hottest core", $"{m.Cpu.HottestCoreTempC.Value}C", TempBrush(m.Cpu.HottestCoreTempC.Value)));
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> GpuRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>();
-        foreach (var g in m.Gpus)
-        {
-            rows.Add(("Model", g.Name, null));
-            rows.Add(("VRAM", g.VramText ?? "unknown", null));
-            if (g.TempC.HasValue)
-                rows.Add(("Temperature", $"{g.TempC.Value}C", TempBrush(g.TempC.Value)));
-            else
-                rows.Add(("Temperature", "not available", null));
-            if (g.HotspotTempC.HasValue)
-                rows.Add(("Hotspot", $"{g.HotspotTempC.Value}C", TempBrush(g.HotspotTempC.Value)));
-            rows.Add(("", "", null));
-        }
-        if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> RamRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>
-        {
-            ("Total installed", $"{m.Ram.TotalBytes / 1024 / 1024 / 1024} GB", null),
-        };
-        if (!string.IsNullOrEmpty(m.Ram.MemoryType))
-            rows.Add(("Type", m.Ram.MemoryType, null));
-        if (m.Ram.TempC.HasValue)
-            rows.Add(("Module temperature", $"{m.Ram.TempC.Value}C", TempBrush(m.Ram.TempC.Value)));
-        foreach (var s in m.Ram.Sticks)
-        {
-            var vendor = string.IsNullOrWhiteSpace(s.Manufacturer) ? "" : $" · {s.Manufacturer}";
-            rows.Add(($"Slot {s.Slot}", $"{s.CapacityBytes / 1024 / 1024 / 1024} GB @ {s.SpeedMHz}MHz{vendor}", null));
-        }
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> BoardRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>
-        {
-            ("Manufacturer", m.Board.Manufacturer, null),
-            ("Model", m.Board.Product, null),
-            ("BIOS version", m.Board.BiosVersion, null),
-        };
-        if (m.Board.TempC.HasValue)
-            rows.Add(("Board temperature", $"{m.Board.TempC.Value}C", TempBrush(m.Board.TempC.Value)));
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> DriveRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>();
-        foreach (var d in m.Drives)
-        {
-            rows.Add(("Model", d.Model, null));
-            rows.Add(("Size", d.SizeText, null));
-            rows.Add(("Media type", d.MediaType, null));
-            // No Temperature row: the LHM storage sensor is unreliable
-            // (94C for a drive HD Sentinel reads at 39C), so no drive
-            // temp is shown rather than a wrong number (Sithu, build 11).
-            rows.Add(("", "", null));
-        }
-        if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> OsRows(SpecModel m)
-    {
-        return new List<(string, string, IBrush?)>
-        {
-            ("Edition", m.Os.Caption, null),
-            ("Architecture", m.Os.Architecture, null),
-            ("Build", m.Os.BuildNumber, null),
-            ("Activation", m.Os.IsActivated ? "Activated" : "Not activated", null),
         };
     }
 

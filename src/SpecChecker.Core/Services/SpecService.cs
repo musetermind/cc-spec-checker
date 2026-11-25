@@ -122,8 +122,12 @@ public static class SpecService
                 if (model.Contains(friendly, StringComparison.OrdinalIgnoreCase)
                     || friendly.Contains(model, StringComparison.OrdinalIgnoreCase))
                 {
-                    uint mt = p["MediaType"] is uint m ? m : 0;
-                    uint bt = p["BusType"] is uint b ? b : 0;
+                    // MediaType and BusType are UInt16 in MSFT_PhysicalDisk,
+                    // not UInt32 — 'is uint' never matched, so both read as
+                    // 0 and every drive fell back to the WMI string (the
+                    // build-12 bug: "Fixed hard disk media" everywhere).
+                    uint mt = p["MediaType"] != null ? Convert.ToUInt32(p["MediaType"]) : 0;
+                    uint bt = p["BusType"] != null ? Convert.ToUInt32(p["BusType"]) : 0;
                     mediaType = DriveTypeLabel(mt, bt, mediaType);
                     Logger.Write($"Drive type: '{model}' MSFT MediaType={mt}, BusType={bt} -> {mediaType}.");
                     break;
@@ -200,17 +204,30 @@ public static class SpecService
 
     /// <summary>
     /// The real drive type from MSFT_PhysicalDisk: MediaType 4=SSD,
-    /// 3=HDD, 5=SCM; BusType 17=NVMe, 11=SATA, 7=USB. Anything else
-    /// keeps the WMI string (the fallback) so an unknown type is never
-    /// mislabeled. A USB stick with no MediaType is a flash drive.
+    /// 3=HDD, 5=SCM; BusType 17=NVMe, 11=SATA, 7=USB, 10=SAS, 1=SCSI.
+    /// Labels match Task Manager ("SSD (NVMe)", "HDD (SATA)",
+    /// "Removable (USB)"). Anything else keeps the WMI string (the
+    /// fallback) so an unknown type is never mislabeled.
     /// </summary>
-    private static string DriveTypeLabel(uint mediaType, uint busType, string fallback) => mediaType switch
+    private static string DriveTypeLabel(uint mediaType, uint busType, string fallback)
     {
-        4 => busType == 17 ? "SSD (NVMe)" : busType == 11 ? "SSD (SATA)" : "SSD",
-        3 => "HDD",
-        5 => "SCM",
-        _ => busType == 7 ? "USB flash drive" : fallback,
-    };
+        var bus = busType switch
+        {
+            17 => "NVMe",
+            11 => "SATA",
+            7 => "USB",
+            10 => "SAS",
+            1 => "SCSI",
+            _ => null,
+        };
+        return mediaType switch
+        {
+            4 => bus != null ? $"SSD ({bus})" : "SSD",
+            3 => bus != null ? $"HDD ({bus})" : "HDD",
+            5 => "SCM",
+            _ => busType == 7 ? "Removable (USB)" : fallback,
+        };
+    }
 
     /// <summary>
     /// Query the Storage WMI namespace (MSFT_PhysicalDisk lives there,
