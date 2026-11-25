@@ -13,11 +13,21 @@ public static class SpecService
     /// </summary>
     public static SpecModel GetModel()
     {
-        var (pkg, hot, _) = SensorService.GetCpuTemps();
+        var (pkg, hot, boardTemp) = SensorService.GetCpuTemps();
         var cpuName = "";
-        foreach (var s in Query("SELECT Name FROM Win32_Processor"))
+        var cores = 0;
+        var threads = 0;
+        uint l2 = 0, l3 = 0, maxClock = 0;
+        foreach (var s in Query("SELECT Name, NumberOfCores, NumberOfLogicalProcessors, L2CacheSize, L3CacheSize, MaxClockSpeed FROM Win32_Processor"))
+        {
             cpuName = s["Name"]?.ToString() ?? "?";
-        var cpu = new CpuInfo(cpuName, pkg, hot);
+            cores = s["NumberOfCores"] is uint c ? (int)c : 0;
+            threads = s["NumberOfLogicalProcessors"] is uint t ? (int)t : 0;
+            l2 = s["L2CacheSize"] is uint l2v ? l2v : 0;
+            l3 = s["L3CacheSize"] is uint l3v ? l3v : 0;
+            maxClock = s["MaxClockSpeed"] is uint mc ? mc : 0;
+        }
+        var cpu = new CpuInfo(cpuName, cores, threads, l2, l3, maxClock, pkg, hot);
 
         var dxgiVram = DxgiVram.GetVramByPciId();
         var (vramByPci, vramByName) = GetVramFromRegistry();
@@ -52,22 +62,30 @@ public static class SpecService
                     vram = FormatVram(b);
             }
             int? temp = null;
+            int? hotspot = null;
             if (nvTemps.TryGetValue(gpuIndex, out var nv) && nv.tempC >= 0)
+            {
                 temp = nv.tempC;
-            gpus.Add(new GpuInfo(name, vram, temp));
+                hotspot = nv.hotspotC;
+            }
+            gpus.Add(new GpuInfo(name, vram, temp, hotspot));
             gpuIndex++;
         }
 
         var sticks = new List<RamStick>();
         ulong total = 0;
-        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType FROM Win32_PhysicalMemory"))
+        var memType = "";
+        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer FROM Win32_PhysicalMemory"))
         {
             var cap = Convert.ToUInt64(s["Capacity"]);
             total += cap;
             uint speed = s["Speed"] is uint sp ? sp : 0;
-            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed));
+            var vendor = s["Manufacturer"]?.ToString()?.Trim() ?? "";
+            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor));
+            if (string.IsNullOrEmpty(memType) && s["SMBIOSMemoryType"] is uint mt)
+                memType = MemoryTypeName(mt);
         }
-        var ram = new RamInfo(sticks, total);
+        var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp());
 
         var boardMfr = "";
         var boardProduct = "";
@@ -79,16 +97,31 @@ public static class SpecService
         var bios = "";
         foreach (var s in Query("SELECT SMBIOSBIOSVersion FROM Win32_BIOS"))
             bios = s["SMBIOSBIOSVersion"]?.ToString() ?? "";
-        var board = new BoardInfo(boardMfr, boardProduct, bios);
+        var board = new BoardInfo(boardMfr, boardProduct, bios, boardTemp);
 
+        var driveTemps = SensorService.GetDriveTemps();
         var drives = new List<DriveInfo>();
         foreach (var s in Query("SELECT Model, Size, MediaType FROM Win32_DiskDrive"))
         {
             var size = s["Size"] != null ? $"{Convert.ToUInt64(s["Size"]) / 1024 / 1024 / 1024} GB" : "?";
+            var model = s["Model"]?.ToString() ?? "?";
+            // Match the LHM drive temp by model name (LHM reports the same
+            // model string). No match = no temp, never a guessed number.
+            int? temp = null;
+            foreach (var kv in driveTemps)
+            {
+                if (model.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)
+                    || kv.Key.Contains(model, StringComparison.OrdinalIgnoreCase))
+                {
+                    temp = kv.Value;
+                    break;
+                }
+            }
             drives.Add(new DriveInfo(
-                s["Model"]?.ToString() ?? "?",
+                model,
                 size,
-                s["MediaType"]?.ToString()?.Trim() ?? ""));
+                s["MediaType"]?.ToString()?.Trim() ?? "",
+                temp));
         }
 
         var health = SmartHealth.GetDriveHealthDetailed();
@@ -102,13 +135,61 @@ public static class SpecService
             osArch = s["OSArchitecture"]?.ToString() ?? "";
             osBuild = s["BuildNumber"]?.ToString() ?? "";
         }
-        var os = new OsInfo(osCaption, osArch, osBuild);
+        var os = new OsInfo(osCaption, osArch, osBuild, IsWindowsActivated());
 
         var monitors = new List<string>();
         foreach (var s in Query("SELECT Name FROM Win32_DesktopMonitor"))
             monitors.Add(s["Name"]?.ToString() ?? "?");
 
         return new SpecModel(cpu, gpus, ram, board, drives, health, os, monitors);
+    }
+
+    /// <summary>
+    /// SMBIOS memory type code to the DDR generation label. 20=DDR, 21=DDR2,
+    /// 22=DDR3, 24=DDR4, 26=DDR5 (the common ones); anything else is
+    /// reported as its raw code so a new type is never mislabeled.
+    /// </summary>
+    private static string MemoryTypeName(uint code) => code switch
+    {
+        20 => "DDR",
+        21 => "DDR2",
+        22 => "DDR3",
+        23 => "DDR4", // some BIOSes report DDR4 as 23; 24 is the common code
+        24 => "DDR4",
+        26 => "DDR5",
+        _ => $"DDR (type {code})",
+    };
+
+    /// <summary>True when this process is running with administrator rights.</summary>
+    public static bool IsElevated()
+    {
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        return new System.Security.Principal.WindowsPrincipal(identity)
+            .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
+    }
+
+    /// <summary>
+    /// Whether Windows is activated: LicenseStatus 1 (Licensed) on the
+    /// Windows SoftwareLicensingProduct. Any other status = not activated.
+    /// </summary>
+    private static bool IsWindowsActivated()
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                "SELECT LicenseStatus FROM SoftwareLicensingProduct " +
+                "WHERE ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL");
+            foreach (ManagementObject mo in searcher.Get())
+            {
+                if (mo["LicenseStatus"] is uint status && status == 1)
+                    return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("Activation check failed: " + ex.Message);
+        }
+        return false;
     }
 
     /// <summary>
@@ -125,9 +206,21 @@ public static class SpecService
         sb.AppendLine(new string('=', 70));
 
         sb.AppendLine("\nPROCESSOR");
-        var temp = m.Cpu.PackageTempC.HasValue ? $" - {m.Cpu.PackageTempC.Value}C package"
-                 : " - temp not available (PawnIO driver not installed)";
-        sb.AppendLine("  " + m.Cpu.Name + temp);
+        sb.AppendLine("  " + m.Cpu.Name);
+        if (m.Cpu.Cores > 0)
+            sb.AppendLine($"  Cores: {m.Cpu.Cores} · Threads: {m.Cpu.Threads}");
+        if (m.Cpu.L3CacheKB > 0 || m.Cpu.L2CacheKB > 0)
+            sb.AppendLine($"  Cache: L2 {m.Cpu.L2CacheKB / 1024}MB · L3 {m.Cpu.L3CacheKB / 1024}MB");
+        if (m.Cpu.MaxClockMHz > 0)
+            sb.AppendLine($"  Max clock: {m.Cpu.MaxClockMHz / 1000.0:0.#} GHz");
+        // CPU temp: when unelevated, point at the fix (restart as admin)
+        // instead of naming the driver — that is what actually unlocks it
+        // on this bench. When already elevated and still no temp, the
+        // driver is the real gap, so name it then.
+        var temp = m.Cpu.PackageTempC.HasValue ? $"  Package temp: {m.Cpu.PackageTempC.Value}C"
+                 : IsElevated() ? "  Package temp: not available (PawnIO driver not installed)"
+                 : "  Package temp: restart as admin to check cpu temp";
+        sb.AppendLine(temp);
         if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
             && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
             sb.AppendLine($"  Hottest core: {m.Cpu.HottestCoreTempC.Value}C");
@@ -137,21 +230,34 @@ public static class SpecService
         {
             var vram = g.VramText != null ? $" - {g.VramText} VRAM" : "";
             var t = g.TempC.HasValue ? $" - {g.TempC.Value}C" : "";
-            sb.AppendLine($"  {g.Name}{vram}{t}");
+            var hs = g.HotspotTempC.HasValue ? $" (hotspot {g.HotspotTempC.Value}C)" : "";
+            sb.AppendLine($"  {g.Name}{vram}{t}{hs}");
         }
 
         sb.AppendLine("\nMEMORY (RAM)");
+        if (!string.IsNullOrEmpty(m.Ram.MemoryType))
+            sb.AppendLine($"  Type: {m.Ram.MemoryType}");
+        if (m.Ram.TempC.HasValue)
+            sb.AppendLine($"  Module temp: {m.Ram.TempC.Value}C");
         foreach (var stick in m.Ram.Sticks)
-            sb.AppendLine($"  - [{stick.Slot}] : {stick.CapacityBytes / 1024 / 1024 / 1024}GB @ {stick.SpeedMHz}MHz");
+        {
+            var vendor = string.IsNullOrWhiteSpace(stick.Manufacturer) ? "" : $" {stick.Manufacturer}";
+            sb.AppendLine($"  - [{stick.Slot}] : {stick.CapacityBytes / 1024 / 1024 / 1024}GB @ {stick.SpeedMHz}MHz{vendor}");
+        }
         sb.AppendLine($"  Total Installed: {m.Ram.TotalBytes / 1024 / 1024 / 1024}GB");
 
         sb.AppendLine("\nMOTHERBOARD");
         sb.AppendLine($"  {m.Board.Manufacturer} {m.Board.Product}");
         sb.AppendLine($"  [BIOS: {m.Board.BiosVersion}]");
+        if (m.Board.TempC.HasValue)
+            sb.AppendLine($"  Board temp: {m.Board.TempC.Value}C");
 
         sb.AppendLine("\nSTORAGE DRIVES");
         foreach (var d in m.Drives)
-            sb.AppendLine($"  {d.Model} - {d.SizeText} [{d.MediaType}]");
+        {
+            var dt = d.TempC.HasValue ? $" - {d.TempC.Value}C" : "";
+            sb.AppendLine($"  {d.Model} - {d.SizeText} [{d.MediaType}]{dt}");
+        }
 
         sb.AppendLine("\nDRIVE HEALTH (SMART)");
         if (m.DriveHealth.Drives.Count == 0)
@@ -175,6 +281,7 @@ public static class SpecService
 
         sb.AppendLine("\nOPERATING SYSTEM");
         sb.AppendLine($"  {m.Os.Caption} ({m.Os.Architecture}) - Build {m.Os.BuildNumber}");
+        sb.AppendLine($"  Activation: {(m.Os.IsActivated ? "Activated" : "Not activated")}");
 
         sb.AppendLine("\nMONITORS");
         foreach (var mon in m.Monitors)

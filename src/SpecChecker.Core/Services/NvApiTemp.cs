@@ -91,10 +91,14 @@ internal static class NvApiTemp
 
     /// <summary>GPU temperature in °C per physical GPU handle index, plus the
     /// dedicated VRAM (KB) as a cross-check against the DXGI figure.
-    /// Returns an empty map when NVAPI is unavailable (no NVIDIA GPU/driver).</summary>
-    public static Dictionary<int, (int tempC, ulong vramBytes)> GetGpuTemps()
+    /// Returns an empty map when NVAPI is unavailable (no NVIDIA GPU/driver).
+    /// The thermal sensors are ordered GPU (0), memory (1), hotspot (2) on
+    /// modern NVIDIA cards — the same layout tools like HWiNFO read. The
+    /// hotspot is only reported when a third sensor exists (Count >= 3);
+    /// all three raw values go to the log so the mapping is verifiable.</summary>
+    public static Dictionary<int, (int tempC, int? hotspotC, ulong vramBytes)> GetGpuTemps()
     {
-        var result = new Dictionary<int, (int, ulong)>();
+        var result = new Dictionary<int, (int, int?, ulong)>();
         var hModule = LoadLibrary("nvapi64.dll");
         if (hModule == IntPtr.Zero)
         {
@@ -138,6 +142,7 @@ internal static class NvApiTemp
                 for (var i = 0; i < count; i++)
                 {
                     var temp = -1;
+                    int? hotspot = null;
                     var settings = new GpuThermalSettings
                     {
                         Version = ThermalSettingsVersion,
@@ -146,6 +151,10 @@ internal static class NvApiTemp
                     if (getThermal(handles[i], 0, ref settings) == NVAPI_OK && settings.Count > 0)
                     {
                         temp = settings.Sensor[0].CurrentTemp;
+                        if (settings.Count >= 3)
+                            hotspot = settings.Sensor[2].CurrentTemp;
+                        var all = string.Join(", ", settings.Sensor.Take((int)settings.Count).Select(s => s.CurrentTemp + "C"));
+                        Logger.Write($"NVAPI: GPU {i}: sensors [{all}] (GPU, memory, hotspot).");
                     }
                     ulong vram = 0;
                     if (getMem != null)
@@ -154,8 +163,8 @@ internal static class NvApiTemp
                         if (getMem(handles[i], ref mem) == NVAPI_OK)
                             vram = (ulong)mem.DedicatedVideoMemory * 1024;
                     }
-                    Logger.Write($"NVAPI: GPU {i}: temp={temp}C, VRAM={vram} bytes (cross-check).");
-                    result[i] = (temp, vram);
+                    Logger.Write($"NVAPI: GPU {i}: temp={temp}C, hotspot={hotspot?.ToString() ?? "?"}C, VRAM={vram} bytes (cross-check).");
+                    result[i] = (temp, hotspot, vram);
                 }
             }
             finally

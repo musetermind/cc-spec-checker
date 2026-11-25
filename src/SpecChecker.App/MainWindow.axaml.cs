@@ -30,6 +30,23 @@ public partial class MainWindow : Window
     private static readonly IBrush DetailFg = new SolidColorBrush(Color.Parse("#B8D8B8"));
     private static readonly IBrush MutedFg = new SolidColorBrush(Color.Parse("#6A8A6A"));
 
+    // Temperature colour scale (Sithu's bands): up to 70C green, up to 80C
+    // yellow, up to 97C orange, above that red. Applies to CPU, GPU (and
+    // hotspot), board, RAM and drive temps.
+    private static readonly IBrush TempGreen = new SolidColorBrush(Color.Parse("#00FF00"));
+    private static readonly IBrush TempYellow = new SolidColorBrush(Color.Parse("#FFD700"));
+    private static readonly IBrush TempOrange = new SolidColorBrush(Color.Parse("#FF8C00"));
+    private static readonly IBrush TempRed = new SolidColorBrush(Color.Parse("#FF3333"));
+
+    /// <summary>The brush for a temperature: green ≤70, yellow ≤80, orange ≤97, red above.</summary>
+    private static IBrush TempBrush(int tempC) => tempC switch
+    {
+        <= 70 => TempGreen,
+        <= 80 => TempYellow,
+        <= 97 => TempOrange,
+        _ => TempRed,
+    };
+
     public MainWindow()
     {
         InitializeComponent();
@@ -128,19 +145,27 @@ public partial class MainWindow : Window
         // Processor card
         var cpuTemp = m.Cpu.PackageTempC.HasValue
             ? $"{m.Cpu.PackageTempC.Value}C package"
-            : "temp not available (PawnIO driver not installed)";
+            : SpecService.IsElevated()
+                ? "temp not available (PawnIO driver not installed)"
+                : "restart as admin to check cpu temp";
         if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
             && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
             cpuTemp += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
-        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuTemp, () => GoToCategory("CPU")));
+        var cpuDetailBrush = m.Cpu.PackageTempC.HasValue
+            ? TempBrush(m.Cpu.PackageTempC.Value)
+            : (IBrush?)null;
+        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuTemp, () => GoToCategory("CPU"), cpuDetailBrush));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
         if (gpu != null)
         {
             var vram = gpu.VramText ?? "VRAM unknown";
-            var gDetail = gpu.Name + (gpu.TempC.HasValue ? $" · {gpu.TempC.Value}C" : "");
-            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gDetail, () => GoToCategory("Graphics")));
+            var gDetail = gpu.Name
+                + (gpu.TempC.HasValue ? $" · {gpu.TempC.Value}C" : "")
+                + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
+            var gpuDetailBrush = gpu.TempC.HasValue ? TempBrush(gpu.TempC.Value) : (IBrush?)null;
+            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gDetail, () => GoToCategory("Graphics"), gpuDetailBrush));
         }
         else
         {
@@ -151,27 +176,33 @@ public partial class MainWindow : Window
         var totalGb = m.Ram.TotalBytes / 1024 / 1024 / 1024;
         var speed = m.Ram.Sticks.FirstOrDefault()?.SpeedMHz ?? 0;
         var ramDetail = m.Ram.Sticks.Count > 0
-            ? $"{m.Ram.Sticks.Count} stick{(m.Ram.Sticks.Count == 1 ? "" : "s")}" + (speed > 0 ? $" · DDR @ {speed}MHz" : "")
+            ? $"{m.Ram.Sticks.Count} stick{(m.Ram.Sticks.Count == 1 ? "" : "s")}"
+              + (!string.IsNullOrEmpty(m.Ram.MemoryType) ? $" · {m.Ram.MemoryType}" : "")
+              + (speed > 0 ? $" @ {speed}MHz" : "")
+              + (m.Ram.TempC.HasValue ? $" · {m.Ram.TempC.Value}C" : "")
             : "No RAM sticks found";
         cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramDetail, () => GoToCategory("RAM")));
 
         // Motherboard card
         var boardHead = string.IsNullOrWhiteSpace(m.Board.Product) ? "Unknown board" : m.Board.Product;
         var boardDetail = m.Board.Manufacturer
-            + (string.IsNullOrWhiteSpace(m.Board.BiosVersion) ? "" : $" · BIOS {m.Board.BiosVersion}");
+            + (string.IsNullOrWhiteSpace(m.Board.BiosVersion) ? "" : $" · BIOS {m.Board.BiosVersion}")
+            + (m.Board.TempC.HasValue ? $" · {m.Board.TempC.Value}C" : "");
         cards.Add(MakeCard("MOTHERBOARD", boardHead, boardDetail, () => GoToCategory("Motherboard")));
 
         // Storage card
         var first = m.Drives.FirstOrDefault();
         var storageHead = first != null ? first.Model : "No drives found";
         var storageDetail = first != null
-            ? $"{first.SizeText} · {first.MediaType}" + (m.Drives.Count > 1 ? $" · {m.Drives.Count} drives" : "")
+            ? $"{first.SizeText} · {first.MediaType}"
+              + (first.TempC.HasValue ? $" · {first.TempC.Value}C" : "")
+              + (m.Drives.Count > 1 ? $" · {m.Drives.Count} drives" : "")
             : "";
         cards.Add(MakeCard("STORAGE", storageHead, storageDetail, () => GoToCategory("Storage")));
 
         // Operating system card
         var osHead = string.IsNullOrWhiteSpace(m.Os.Caption) ? "Unknown OS" : ShortOs(m.Os.Caption);
-        var osDetail = $"{m.Os.Architecture} · Build {m.Os.BuildNumber}";
+        var osDetail = $"{m.Os.Architecture} · Build {m.Os.BuildNumber} · {(m.Os.IsActivated ? "Activated" : "Not activated")}";
         cards.Add(MakeCard("OPERATING SYSTEM", osHead, osDetail, () => GoToCategory("Operating System")));
 
         for (var i = 0; i < cards.Count; i++)
@@ -187,8 +218,10 @@ public partial class MainWindow : Window
     /// <summary>
     /// One dashboard card: a small muted title, a large bright headline,
     /// and a smaller detail line. Clicking it opens that category.
+    /// The detail line takes the given brush when one is passed (a
+    /// temperature uses its colour band); otherwise the soft green.
     /// </summary>
-    private Border MakeCard(string title, string headline, string detail, Action onClick)
+    private Border MakeCard(string title, string headline, string detail, Action onClick, IBrush? detailBrush = null)
     {
         var stack = new StackPanel { Spacing = 6 };
         stack.Children.Add(new TextBlock
@@ -211,7 +244,7 @@ public partial class MainWindow : Window
             stack.Children.Add(new TextBlock
             {
                 Text = detail,
-                Foreground = DetailFg,
+                Foreground = detailBrush ?? DetailFg,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -235,7 +268,7 @@ public partial class MainWindow : Window
     // ----- Detail panels -----
 
     /// <summary>A detail panel: a section title plus label/value rows.</summary>
-    private Control BuildDetail(string title, List<(string Label, string Value)> rows)
+    private Control BuildDetail(string title, List<(string Label, string Value, IBrush? ValueBrush)> rows)
     {
         var stack = new StackPanel { Spacing = 0 };
 
@@ -248,8 +281,8 @@ public partial class MainWindow : Window
             Margin = new Thickness(0, 4, 0, 12),
         });
 
-        foreach (var (label, value) in rows)
-            stack.Children.Add(MakeRow(label, value));
+        foreach (var (label, value, brush) in rows)
+            stack.Children.Add(MakeRow(label, value, brush));
 
         if (rows.Count == 0)
         {
@@ -264,8 +297,10 @@ public partial class MainWindow : Window
         return stack;
     }
 
-    /// <summary>One label/value row: label on the left (muted), value on the right (bright), with a divider.</summary>
-    private Border MakeRow(string label, string value)
+    /// <summary>One label/value row: label on the left (muted), value on the right
+    /// (bright green by default, or the given brush — temperatures use their
+    /// colour band), with a divider.</summary>
+    private Border MakeRow(string label, string value, IBrush? valueBrush = null)
     {
         var grid = new Grid
         {
@@ -284,7 +319,7 @@ public partial class MainWindow : Window
         var valueBlock = new TextBlock
         {
             Text = value,
-            Foreground = HeadlineFg,
+            Foreground = valueBrush ?? HeadlineFg,
             FontSize = 13,
             VerticalAlignment = VerticalAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
@@ -303,73 +338,105 @@ public partial class MainWindow : Window
 
     // ----- Rows per category -----
 
-    private static List<(string, string)> CpuRows(SpecModel m)
+    private static List<(string, string, IBrush?)> CpuRows(SpecModel m)
     {
-        var rows = new List<(string, string)>
+        var rows = new List<(string, string, IBrush?)>
         {
-            ("Model", m.Cpu.Name),
-            ("Package temperature", m.Cpu.PackageTempC.HasValue ? $"{m.Cpu.PackageTempC.Value}C" : "not available (PawnIO driver not installed)"),
+            ("Model", m.Cpu.Name, null),
         };
+        if (m.Cpu.Cores > 0)
+            rows.Add(("Cores / Threads", $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads", null));
+        if (m.Cpu.L3CacheKB > 0 || m.Cpu.L2CacheKB > 0)
+            rows.Add(("Cache", $"L2 {m.Cpu.L2CacheKB / 1024}MB · L3 {m.Cpu.L3CacheKB / 1024}MB", null));
+        if (m.Cpu.MaxClockMHz > 0)
+            rows.Add(("Max clock", $"{m.Cpu.MaxClockMHz / 1000.0:0.#} GHz", null));
+        // CPU temp: when unelevated, point at the fix (restart as admin)
+        // instead of naming the driver — that is what actually unlocks it
+        // on this bench. When already elevated and still no temp, the
+        // driver is the real gap, so name it then.
+        if (m.Cpu.PackageTempC.HasValue)
+            rows.Add(("Package temperature", $"{m.Cpu.PackageTempC.Value}C", TempBrush(m.Cpu.PackageTempC.Value)));
+        else
+            rows.Add(("Package temperature",
+                SpecService.IsElevated()
+                    ? "not available (PawnIO driver not installed)"
+                    : "restart as admin to check cpu temp",
+                null));
         if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
             && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
-            rows.Add(("Hottest core", $"{m.Cpu.HottestCoreTempC.Value}C"));
+            rows.Add(("Hottest core", $"{m.Cpu.HottestCoreTempC.Value}C", TempBrush(m.Cpu.HottestCoreTempC.Value)));
         return rows;
     }
 
-    private static List<(string, string)> GpuRows(SpecModel m)
+    private static List<(string, string, IBrush?)> GpuRows(SpecModel m)
     {
-        var rows = new List<(string, string)>();
+        var rows = new List<(string, string, IBrush?)>();
         foreach (var g in m.Gpus)
         {
-            rows.Add(("Model", g.Name));
-            rows.Add(("VRAM", g.VramText != null ? $"{g.VramText} (via DXGI)" : "unknown"));
-            rows.Add(("Temperature", g.TempC.HasValue ? $"{g.TempC.Value}C" : "not available"));
-            rows.Add(("", ""));
+            rows.Add(("Model", g.Name, null));
+            rows.Add(("VRAM", g.VramText != null ? $"{g.VramText} (via DXGI)" : "unknown", null));
+            if (g.TempC.HasValue)
+                rows.Add(("Temperature", $"{g.TempC.Value}C", TempBrush(g.TempC.Value)));
+            else
+                rows.Add(("Temperature", "not available", null));
+            if (g.HotspotTempC.HasValue)
+                rows.Add(("Hotspot", $"{g.HotspotTempC.Value}C", TempBrush(g.HotspotTempC.Value)));
+            rows.Add(("", "", null));
         }
         if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
         return rows;
     }
 
-    private static List<(string, string)> RamRows(SpecModel m)
+    private static List<(string, string, IBrush?)> RamRows(SpecModel m)
     {
-        var rows = new List<(string, string)>
+        var rows = new List<(string, string, IBrush?)>
         {
-            ("Total installed", $"{m.Ram.TotalBytes / 1024 / 1024 / 1024} GB"),
+            ("Total installed", $"{m.Ram.TotalBytes / 1024 / 1024 / 1024} GB", null),
         };
+        if (!string.IsNullOrEmpty(m.Ram.MemoryType))
+            rows.Add(("Type", m.Ram.MemoryType, null));
+        if (m.Ram.TempC.HasValue)
+            rows.Add(("Module temperature", $"{m.Ram.TempC.Value}C", TempBrush(m.Ram.TempC.Value)));
         foreach (var s in m.Ram.Sticks)
         {
-            rows.Add(($"Slot {s.Slot}", $"{s.CapacityBytes / 1024 / 1024 / 1024} GB @ {s.SpeedMHz}MHz"));
+            var vendor = string.IsNullOrWhiteSpace(s.Manufacturer) ? "" : $" · {s.Manufacturer}";
+            rows.Add(($"Slot {s.Slot}", $"{s.CapacityBytes / 1024 / 1024 / 1024} GB @ {s.SpeedMHz}MHz{vendor}", null));
         }
         return rows;
     }
 
-    private static List<(string, string)> BoardRows(SpecModel m)
+    private static List<(string, string, IBrush?)> BoardRows(SpecModel m)
     {
-        return new List<(string, string)>
+        var rows = new List<(string, string, IBrush?)>
         {
-            ("Manufacturer", m.Board.Manufacturer),
-            ("Model", m.Board.Product),
-            ("BIOS version", m.Board.BiosVersion),
+            ("Manufacturer", m.Board.Manufacturer, null),
+            ("Model", m.Board.Product, null),
+            ("BIOS version", m.Board.BiosVersion, null),
         };
+        if (m.Board.TempC.HasValue)
+            rows.Add(("Board temperature", $"{m.Board.TempC.Value}C", TempBrush(m.Board.TempC.Value)));
+        return rows;
     }
 
-    private static List<(string, string)> DriveRows(SpecModel m)
+    private static List<(string, string, IBrush?)> DriveRows(SpecModel m)
     {
-        var rows = new List<(string, string)>();
+        var rows = new List<(string, string, IBrush?)>();
         foreach (var d in m.Drives)
         {
-            rows.Add(("Model", d.Model));
-            rows.Add(("Size", d.SizeText));
-            rows.Add(("Media type", d.MediaType));
-            rows.Add(("", ""));
+            rows.Add(("Model", d.Model, null));
+            rows.Add(("Size", d.SizeText, null));
+            rows.Add(("Media type", d.MediaType, null));
+            if (d.TempC.HasValue)
+                rows.Add(("Temperature", $"{d.TempC.Value}C", TempBrush(d.TempC.Value)));
+            rows.Add(("", "", null));
         }
         if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
         return rows;
     }
 
-    private static List<(string, string)> HealthRows(SpecModel m)
+    private static List<(string, string, IBrush?)> HealthRows(SpecModel m)
     {
-        var rows = new List<(string, string)>();
+        var rows = new List<(string, string, IBrush?)>();
         if (m.DriveHealth.Drives.Count == 0)
         {
             var why = m.DriveHealth.Failure switch
@@ -378,27 +445,28 @@ public partial class MainWindow : Window
                 SmartHealth.NoDataReason.NotExposed => "not exposed by these drives via WMI (NVMe/USB drives often do not publish it)",
                 _ => "could not be read",
             };
-            rows.Add(("SMART data", $"not available ({why})"));
+            rows.Add(("SMART data", $"not available ({why})", null));
             return rows;
         }
         foreach (var h in m.DriveHealth.Drives)
         {
-            rows.Add(("Drive", h.InstanceName));
-            rows.Add(("Status", h.PredictFailure ? "FAILURE PREDICTED" : "OK"));
-            rows.Add(("Reason", SmartHealth.ReasonLabel(h.Reason)));
-            rows.Add(("", ""));
+            rows.Add(("Drive", h.InstanceName, null));
+            rows.Add(("Status", h.PredictFailure ? "FAILURE PREDICTED" : "OK", null));
+            rows.Add(("Reason", SmartHealth.ReasonLabel(h.Reason), null));
+            rows.Add(("", "", null));
         }
         if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
         return rows;
     }
 
-    private static List<(string, string)> OsRows(SpecModel m)
+    private static List<(string, string, IBrush?)> OsRows(SpecModel m)
     {
-        return new List<(string, string)>
+        return new List<(string, string, IBrush?)>
         {
-            ("Edition", m.Os.Caption),
-            ("Architecture", m.Os.Architecture),
-            ("Build", m.Os.BuildNumber),
+            ("Edition", m.Os.Caption, null),
+            ("Architecture", m.Os.Architecture, null),
+            ("Build", m.Os.BuildNumber, null),
+            ("Activation", m.Os.IsActivated ? "Activated" : "Not activated", null),
         };
     }
 

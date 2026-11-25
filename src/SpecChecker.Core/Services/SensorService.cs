@@ -57,6 +57,66 @@ internal static class SensorService
         }
     }
 
+    /// <summary>
+    /// RAM module temperature in °C (null when no module reports one).
+    /// DDR5 modules can carry a temp sensor; DDR4 almost never does, so
+    /// a null here is normal, not a failure. Read from the Memory
+    /// hardware (needs IsMemoryEnabled).
+    /// </summary>
+    public static int? GetRamTemp()
+    {
+        var computer = EnsureOpen();
+        if (computer == null) return null;
+        try
+        {
+            computer.Accept(new UpdateVisitor());
+            foreach (var hw in computer.Hardware)
+            {
+                if (hw.HardwareType != HardwareType.Memory) continue;
+                foreach (var s in hw.Sensors)
+                {
+                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
+                        return (int)Math.Round(s.Value.Value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("LHM RAM temp read failed: " + ex.GetType().Name + ": " + ex.Message);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Drive temperatures in °C, keyed by the drive name LHM reports
+    /// (usually the model string). Empty when no drive reports a temp.
+    /// Read from the Storage hardware (needs IsStorageEnabled).
+    /// </summary>
+    public static Dictionary<string, int> GetDriveTemps()
+    {
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var computer = EnsureOpen();
+        if (computer == null) return result;
+        try
+        {
+            computer.Accept(new UpdateVisitor());
+            foreach (var hw in computer.Hardware)
+            {
+                if (hw.HardwareType != HardwareType.Storage) continue;
+                foreach (var s in hw.Sensors)
+                {
+                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
+                        result[hw.Name] = (int)Math.Round(s.Value.Value);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("LHM drive temp read failed: " + ex.GetType().Name + ": " + ex.Message);
+        }
+        return result;
+    }
+
     private static Computer? EnsureOpen()
     {
         if (_computer != null) return _computer;
@@ -68,15 +128,15 @@ internal static class SensorService
                 IsCpuEnabled = true,
                 IsMotherboardEnabled = true,
                 IsGpuEnabled = true,
-                IsMemoryEnabled = false,
-                IsStorageEnabled = false,
+                IsMemoryEnabled = true,
+                IsStorageEnabled = true,
                 IsNetworkEnabled = false,
                 IsBatteryEnabled = false,
                 IsControllerEnabled = false,
                 IsPsuEnabled = false,
             };
             _computer.Open();
-            Logger.Write("LHM: Computer opened (CPU + board + GPU sensors).");
+            Logger.Write("LHM: Computer opened (CPU + board + GPU + memory + storage sensors).");
             return _computer;
         }
         catch (Exception ex)
