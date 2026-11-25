@@ -46,17 +46,24 @@ public sealed record RamInfo(List<RamStick> Sticks, ulong TotalBytes, string Mem
 /// and the board temp in °C (null when no sensor reports one).</summary>
 public sealed record BoardInfo(string Manufacturer, string Product, string BiosVersion, int? TempC);
 
+/// <summary>One volume (partition) on a drive: its letter ("C:"), total
+/// size and free space in bytes (Sithu, 0.15 — drive letters, used and
+/// free space on the Storage card).</summary>
+public sealed record VolumeInfo(string Letter, ulong TotalBytes, ulong FreeBytes);
+
 /// <summary>One storage drive: model, size as a display string ("465 GB"),
 /// and the real drive type ("SSD (NVMe)", "SSD (SATA)", "HDD (SATA)",
 /// "Removable (USB)") from MSFT_PhysicalDisk — WMI's MediaType says
 /// "Fixed hard disk media" for SSDs and HDDs alike, so it is never shown
 /// as-is when the Storage class answers (Sithu, build 12; the UInt16
-/// cast bug that still showed it in build 12 fixed in 0.13). No drive
-/// temp — LHM's storage temperature sensor is unreliable (it reported
-/// 94C for a drive HD Sentinel reads at 39C), so no temp is shown rather
-/// than a wrong number. No health percentage here — Sithu: SSD health
-/// does not matter.</summary>
-public sealed record DriveInfo(string Model, string SizeText, string MediaType);
+/// cast bug that still showed it in build 12 fixed in 0.13). Volumes
+/// lists the drive's letters with their used/free space (0.15); a drive
+/// with no mounted volume has an empty list. No drive temp — LHM's
+/// storage temperature sensor is unreliable (it reported 94C for a
+/// drive HD Sentinel reads at 39C), so no temp is shown rather than a
+/// wrong number. No health percentage here — Sithu: SSD health does
+/// not matter.</summary>
+public sealed record DriveInfo(string Model, string SizeText, string MediaType, List<VolumeInfo> Volumes);
 
 /// <summary>Operating system: caption, architecture, build number, and
 /// whether Windows is activated (LicenseStatus 1 = Licensed).</summary>

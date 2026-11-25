@@ -2,9 +2,11 @@ using System.Diagnostics;
 using System.Security.Principal;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Styling;
 using SpecChecker.Core.Services;
 
 namespace SpecChecker.App;
@@ -21,31 +23,64 @@ public partial class MainWindow : Window
     private SpecModel? _model;
     private string _fullReport = "";
 
-    // Colours for the green-on-black identity, refined: cards sit a touch
-    // lighter than the page, borders are a muted green, headlines are the
-    // bright green, labels are a soft green.
-    private static readonly IBrush CardBg = new SolidColorBrush(Color.Parse("#0D120D"));
-    private static readonly IBrush CardBorder = new SolidColorBrush(Color.Parse("#1E521E"));
-    private static readonly IBrush HeadlineFg = new SolidColorBrush(Color.Parse("#00FF00"));
-    private static readonly IBrush TitleFg = new SolidColorBrush(Color.Parse("#7FBF7F"));
-    private static readonly IBrush DetailFg = new SolidColorBrush(Color.Parse("#B8D8B8"));
-    private static readonly IBrush MutedFg = new SolidColorBrush(Color.Parse("#6A8A6A"));
+    /// <summary>One theme's colours. Dark is the green-on-black identity
+    /// the app has always had; Light keeps the green, on white.</summary>
+    private sealed record Palette(
+        IBrush PageBg, IBrush HeaderBg, IBrush CardBg, IBrush Border,
+        IBrush HeadlineFg, IBrush TitleFg, IBrush DetailFg, IBrush MutedFg,
+        IBrush ButtonBg, IBrush ButtonFg, IBrush ButtonBorder, IBrush ButtonHoverBg,
+        IBrush TempGreen, IBrush TempYellow, IBrush TempOrange, IBrush TempRed);
 
-    // Temperature colour scale (Sithu's bands): up to 70C green, up to 80C
-    // yellow, up to 97C orange, above that red. Applies to CPU, GPU (and
-    // hotspot), board and RAM temps.
-    private static readonly IBrush TempGreen = new SolidColorBrush(Color.Parse("#00FF00"));
-    private static readonly IBrush TempYellow = new SolidColorBrush(Color.Parse("#FFD700"));
-    private static readonly IBrush TempOrange = new SolidColorBrush(Color.Parse("#FF8C00"));
-    private static readonly IBrush TempRed = new SolidColorBrush(Color.Parse("#FF3333"));
+    private static readonly Palette DarkPalette = new(
+        new SolidColorBrush(Color.Parse("#000000")), // PageBg
+        new SolidColorBrush(Color.Parse("#0A0F0A")), // HeaderBg
+        new SolidColorBrush(Color.Parse("#0D120D")), // CardBg
+        new SolidColorBrush(Color.Parse("#1E521E")), // Border
+        new SolidColorBrush(Color.Parse("#00FF00")), // HeadlineFg
+        new SolidColorBrush(Color.Parse("#7FBF7F")), // TitleFg
+        new SolidColorBrush(Color.Parse("#B8D8B8")), // DetailFg
+        new SolidColorBrush(Color.Parse("#6A8A6A")), // MutedFg
+        new SolidColorBrush(Color.Parse("#0D1F0D")), // ButtonBg
+        new SolidColorBrush(Color.Parse("#00FF00")), // ButtonFg
+        new SolidColorBrush(Color.Parse("#1E521E")), // ButtonBorder
+        new SolidColorBrush(Color.Parse("#1A3A1A")), // ButtonHoverBg
+        new SolidColorBrush(Color.Parse("#00FF00")), // TempGreen
+        new SolidColorBrush(Color.Parse("#FFD700")), // TempYellow
+        new SolidColorBrush(Color.Parse("#FF8C00")), // TempOrange
+        new SolidColorBrush(Color.Parse("#FF3333"))); // TempRed
+
+    private static readonly Palette LightPalette = new(
+        new SolidColorBrush(Color.Parse("#F0F0F0")), // PageBg
+        new SolidColorBrush(Color.Parse("#FFFFFF")), // HeaderBg
+        new SolidColorBrush(Color.Parse("#FFFFFF")), // CardBg
+        new SolidColorBrush(Color.Parse("#A5D6A7")), // Border
+        new SolidColorBrush(Color.Parse("#1B5E20")), // HeadlineFg
+        new SolidColorBrush(Color.Parse("#2E7D32")), // TitleFg
+        new SolidColorBrush(Color.Parse("#333333")), // DetailFg
+        new SolidColorBrush(Color.Parse("#757575")), // MutedFg
+        new SolidColorBrush(Color.Parse("#E8F5E9")), // ButtonBg
+        new SolidColorBrush(Color.Parse("#1B5E20")), // ButtonFg
+        new SolidColorBrush(Color.Parse("#A5D6A7")), // ButtonBorder
+        new SolidColorBrush(Color.Parse("#C8E6C9")), // ButtonHoverBg
+        new SolidColorBrush(Color.Parse("#2E7D32")), // TempGreen
+        new SolidColorBrush(Color.Parse("#B8860B")), // TempYellow
+        new SolidColorBrush(Color.Parse("#E65100")), // TempOrange
+        new SolidColorBrush(Color.Parse("#C62828"))); // TempRed
+
+    private Palette _palette = DarkPalette;
+    private string _themeMode = "Dark";
+
+    /// <summary>Every button whose colours follow the palette (header,
+    /// theme and tool-strip buttons). ApplyPalette repaints them all.</summary>
+    private readonly List<Button> _allButtons = new();
 
     /// <summary>The brush for a temperature: green ≤70, yellow ≤80, orange ≤97, red above.</summary>
-    private static IBrush TempBrush(int tempC) => tempC switch
+    private IBrush TempBrush(int tempC) => tempC switch
     {
-        <= 70 => TempGreen,
-        <= 80 => TempYellow,
-        <= 97 => TempOrange,
-        _ => TempRed,
+        <= 70 => _palette.TempGreen,
+        <= 80 => _palette.TempYellow,
+        <= 97 => _palette.TempOrange,
+        _ => _palette.TempRed,
     };
 
     public MainWindow()
@@ -62,6 +97,23 @@ public partial class MainWindow : Window
         // button only when we are NOT already elevated — when already
         // admin it would be pointless, so hide it.
         AdminButton.IsVisible = !IsElevated();
+        // Theme first (before the first LoadReport builds the cards, so
+        // the dashboard renders in the right palette from the start).
+        _themeMode = ThemeSettings.Load();
+        if (Application.Current != null)
+        {
+            // In System mode the OS theme can change while the app runs;
+            // follow it (ApplyPalette only — no save, no variant change,
+            // so this cannot loop).
+            Application.Current.ActualThemeVariantChanged += (_, _) =>
+            {
+                if (_themeMode == "System") ApplyPalette();
+            };
+        }
+        StyleButton(AdminButton, 13, new Thickness(14, 7));
+        StyleButton(ThemeButton, 11, new Thickness(8, 4));
+        BuildToolStrip();
+        ApplyTheme(_themeMode);
         LoadReport();
     }
 
@@ -70,6 +122,203 @@ public partial class MainWindow : Window
     {
         using var identity = WindowsIdentity.GetCurrent();
         return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator);
+    }
+
+    // ----- Theme (Sithu, 0.15: Dark / Light / System) -----
+
+    /// <summary>Switch the theme: set the Fluent variant (so scrollbars,
+    /// popups and the window chrome follow), repaint the palette, and
+    /// remember the choice for the next launch.</summary>
+    private void ApplyTheme(string mode)
+    {
+        _themeMode = mode;
+        if (Application.Current != null)
+        {
+            Application.Current.RequestedThemeVariant = mode switch
+            {
+                "Light" => ThemeVariant.Light,
+                "System" => ThemeVariant.Default, // follow the OS
+                _ => ThemeVariant.Dark,
+            };
+        }
+        ApplyPalette();
+        ThemeSettings.Save(mode);
+    }
+
+    /// <summary>Pick the palette for the current mode (System follows
+    /// the OS theme) and repaint the window, header, strip, status bar
+    /// and every button, then rebuild the dashboard in the new colours.</summary>
+    private void ApplyPalette()
+    {
+        _palette = _themeMode == "Light" ? LightPalette
+            : _themeMode == "System" && Application.Current?.ActualThemeVariant == ThemeVariant.Light ? LightPalette
+            : DarkPalette;
+        Background = _palette.PageBg;
+        Foreground = _palette.HeadlineFg;
+        HeaderBorder.Background = _palette.HeaderBg;
+        HeaderBorder.BorderBrush = _palette.Border;
+        ToolStripBorder.Background = _palette.HeaderBg;
+        ToolStripBorder.BorderBrush = _palette.Border;
+        StatusBorder.Background = _palette.HeaderBg;
+        StatusBorder.BorderBrush = _palette.Border;
+        HeaderTitle.Foreground = _palette.HeadlineFg;
+        CreditPrefix.Foreground = _palette.HeadlineFg;
+        CreditSuffix.Foreground = _palette.HeadlineFg;
+        CreditPhone1.Foreground = _palette.HeadlineFg;
+        CreditPhone2.Foreground = _palette.HeadlineFg;
+        FacebookButton.Foreground = _palette.HeadlineFg;
+        StatusText.Foreground = _palette.HeadlineFg;
+        ReadOnlyNote.Foreground = _palette.HeadlineFg;
+        foreach (var b in _allButtons) UpdateButtonColors(b);
+        ThemeButton.Content = $"Theme: {_themeMode}";
+        if (_model != null) ContentArea.Content = BuildSummary(_model);
+    }
+
+    /// <summary>One-time button setup: size, shape, hand cursor, hover
+    /// handlers, and registration for palette repaints.</summary>
+    private void StyleButton(Button b, double fontSize, Thickness padding)
+    {
+        b.FontSize = fontSize;
+        b.Padding = padding;
+        b.CornerRadius = new CornerRadius(4);
+        b.Cursor = new Cursor(StandardCursorType.Hand);
+        b.PointerEntered += OnButtonPointerEntered;
+        b.PointerExited += OnButtonPointerExited;
+        _allButtons.Add(b);
+        UpdateButtonColors(b);
+    }
+
+    private void UpdateButtonColors(Button b)
+    {
+        b.Background = _palette.ButtonBg;
+        b.Foreground = _palette.ButtonFg;
+        b.BorderBrush = _palette.ButtonBorder;
+        b.BorderThickness = new Thickness(1);
+    }
+
+    private void OnButtonPointerEntered(object? sender, PointerEventArgs e)
+    {
+        if (sender is Button b) b.Background = _palette.ButtonHoverBg;
+    }
+
+    private void OnButtonPointerExited(object? sender, PointerEventArgs e)
+    {
+        if (sender is Button b) b.Background = _palette.ButtonBg;
+    }
+
+    /// <summary>The theme button cycles Dark -> Light -> System.</summary>
+    private void OnThemeClick(object? sender, RoutedEventArgs e)
+    {
+        ApplyTheme(_themeMode switch
+        {
+            "Dark" => "Light",
+            "Light" => "System",
+            _ => "Dark",
+        });
+    }
+
+    /// <summary>The shop name in the header credit opens the CC
+    /// Facebook page in the default browser (Sithu, 0.15).</summary>
+    private void OnFacebook(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://www.facebook.com/ccpcbuilder")
+            {
+                UseShellExecute = true,
+            });
+            StatusText.Text = "Opened CC Computer Corner on Facebook.";
+            Logger.Write("Opened https://www.facebook.com/ccpcbuilder.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("Could not open Facebook page: " + ex.Message);
+            StatusText.Text = "Could not open the Facebook page — see log.";
+        }
+    }
+
+    // ----- Quick-launch tool strip (Sithu, 0.15: two rows, six each) -----
+
+    /// <summary>Build the tool strip: Refresh / Copy / Save snapshot plus
+    /// the Windows tools, two rows of six. Built in code (not XAML) so
+    /// the buttons follow the active theme palette.</summary>
+    private void BuildToolStrip()
+    {
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"),
+            RowDefinitions = new RowDefinitions("Auto,Auto"),
+        };
+        AddStripButton(grid, "Refresh", "refresh", 0, 0);
+        AddStripButton(grid, "Copy", "copy", 1, 0);
+        AddStripButton(grid, "Save snapshot", "save", 2, 0);
+        AddStripButton(grid, "Device Manager", "devmgmt", 3, 0);
+        AddStripButton(grid, "Disk Management", "diskmgmt", 4, 0);
+        AddStripButton(grid, "Task Manager", "taskmgr", 5, 0);
+        AddStripButton(grid, "Settings", "settings", 0, 1);
+        AddStripButton(grid, "File Explorer", "explorer", 1, 1);
+        AddStripButton(grid, "Recycle Bin", "recyclebin", 2, 1);
+        AddStripButton(grid, "Disk Cleanup", "cleanmgr", 3, 1);
+        AddStripButton(grid, "Resource Monitor", "resmon", 4, 1);
+        AddStripButton(grid, "Reliability Monitor", "perfmon", 5, 1);
+        ToolStripArea.Content = grid;
+    }
+
+    private void AddStripButton(Grid grid, string label, string tag, int col, int row)
+    {
+        var b = new Button
+        {
+            Content = label,
+            Tag = tag,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            // 6px gaps between buttons, none at the strip's right/bottom edge.
+            Margin = new Thickness(0, 0, col < 5 ? 6 : 0, row == 0 ? 6 : 0),
+        };
+        Grid.SetColumn(b, col);
+        Grid.SetRow(b, row);
+        b.Click += OnStripButtonClick;
+        StyleButton(b, 11, new Thickness(8, 6));
+        grid.Children.Add(b);
+    }
+
+    private void OnStripButtonClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button b || b.Tag is not string tag) return;
+        switch (tag)
+        {
+            case "refresh": OnRefresh(sender, e); break;
+            case "copy": OnCopy(sender, e); break;
+            case "save": OnSaveSnapshot(sender, e); break;
+            case "devmgmt": LaunchTool("Device Manager", "devmgmt.msc", null); break;
+            case "diskmgmt": LaunchTool("Disk Management", "diskmgmt.msc", null); break;
+            case "taskmgr": LaunchTool("Task Manager", "taskmgr.exe", null); break;
+            case "settings": LaunchTool("Settings", "ms-settings:", null); break;
+            case "explorer": LaunchTool("File Explorer", "explorer.exe", "shell:MyComputerFolder"); break;
+            case "recyclebin": LaunchTool("Recycle Bin", "explorer.exe", "shell:RecycleBinFolder"); break;
+            case "cleanmgr": LaunchTool("Disk Cleanup", "cleanmgr.exe", null); break;
+            case "resmon": LaunchTool("Resource Monitor", "resmon.exe", null); break;
+            case "perfmon": LaunchTool("Reliability Monitor", "perfmon.exe", "/rel"); break;
+        }
+    }
+
+    /// <summary>Open a Windows tool via the shell (UseShellExecute).
+    /// A failed launch never crashes the app — it lands in the status
+    /// bar and the log instead.</summary>
+    private void LaunchTool(string label, string file, string? args)
+    {
+        try
+        {
+            var start = new ProcessStartInfo(file) { UseShellExecute = true };
+            if (!string.IsNullOrEmpty(args)) start.Arguments = args;
+            Process.Start(start);
+            StatusText.Text = $"Opened {label}.";
+            Logger.Write($"Opened {label} ({file}{(args != null ? " " + args : "")}).");
+        }
+        catch (Exception ex)
+        {
+            Logger.Write($"Could not open {label}: " + ex.Message);
+            StatusText.Text = $"Could not open {label} — see log.";
+        }
     }
 
     private void LoadReport()
@@ -89,7 +338,7 @@ public partial class MainWindow : Window
             ContentArea.Content = new TextBlock
             {
                 Text = _fullReport,
-                Foreground = HeadlineFg,
+                Foreground = _palette.HeadlineFg,
                 FontFamily = new FontFamily("Consolas"),
                 FontSize = 13,
                 TextWrapping = TextWrapping.Wrap,
@@ -118,7 +367,7 @@ public partial class MainWindow : Window
         // Processor card — specs on the first line, the live temp on a
         // second line under it. The temp line keeps its colour band;
         // when there is no temp the line says what to do instead
-        // ("restart as admin...").
+        // ("Restart as Admin to check CPU temperature").
         var cpuLines = new List<(string Text, IBrush? Brush)>();
         if (m.Cpu.Cores > 0)
         {
@@ -140,7 +389,7 @@ public partial class MainWindow : Window
         {
             cpuLines.Add((SpecService.IsElevated()
                 ? "temp not available (PawnIO driver not installed)"
-                : "restart as admin to check cpu temp", null));
+                : "Restart as Admin to check CPU temperature", null));
         }
         cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuLines));
 
@@ -193,13 +442,18 @@ public partial class MainWindow : Window
             boardLines.Add(($"{m.Board.TempC.Value}C", TempBrush(m.Board.TempC.Value)));
         cards.Add(MakeCard("MOTHERBOARD", boardHead, boardLines));
 
-        // Storage card — one line per drive (model · size · type), so the
-        // count in the headline is backed by the full list on the card.
-        // No drive temp: the LHM storage sensor is unreliable (94C for a
-        // drive HD Sentinel reads at 39C), so none is shown.
+        // Storage card — one line per drive (model · size · type), plus
+        // one muted line per volume with its letter, used and free space
+        // (Sithu, 0.15). No drive temp: the LHM storage sensor is
+        // unreliable (94C for a drive HD Sentinel reads at 39C), so none
+        // is shown.
         var storageLines = new List<(string Text, IBrush? Brush)>();
         foreach (var d in m.Drives)
+        {
             storageLines.Add(($"{d.Model} · {d.SizeText} · {d.MediaType}", null));
+            foreach (var v in d.Volumes)
+                storageLines.Add(($"  {v.Letter} {SpecService.FormatSize(v.TotalBytes - v.FreeBytes)} used · {SpecService.FormatSize(v.FreeBytes)} free", _palette.MutedFg));
+        }
         var storageHead = m.Drives.Count > 0
             ? $"{m.Drives.Count} drive{(m.Drives.Count == 1 ? "" : "s")}"
             : "No drives found";
@@ -233,14 +487,14 @@ public partial class MainWindow : Window
         stack.Children.Add(new TextBlock
         {
             Text = title,
-            Foreground = TitleFg,
+            Foreground = _palette.TitleFg,
             FontSize = 11,
             FontWeight = FontWeight.Bold,
         });
         stack.Children.Add(new TextBlock
         {
             Text = headline,
-            Foreground = HeadlineFg,
+            Foreground = _palette.HeadlineFg,
             FontSize = 22,
             FontWeight = FontWeight.Bold,
             TextWrapping = TextWrapping.Wrap,
@@ -251,7 +505,7 @@ public partial class MainWindow : Window
             stack.Children.Add(new TextBlock
             {
                 Text = text,
-                Foreground = brush ?? DetailFg,
+                Foreground = brush ?? _palette.DetailFg,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -259,8 +513,8 @@ public partial class MainWindow : Window
 
         return new Border
         {
-            Background = CardBg,
-            BorderBrush = CardBorder,
+            Background = _palette.CardBg,
+            BorderBrush = _palette.Border,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(16, 14),

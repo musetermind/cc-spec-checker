@@ -109,8 +109,11 @@ public static class SpecService
         // (17=NVMe, 11=SATA, 7=USB). Match by model name; no match or a
         // failed query = keep the WMI string, never a guessed type.
         var physDisks = QueryStorage("SELECT FriendlyName, MediaType, BusType FROM MSFT_PhysicalDisk");
+        // Drive letters + used/free space (Sithu, 0.15): map each
+        // physical drive to its volumes before the drive loop.
+        var volumesByDrive = GetVolumesByDrive();
         var drives = new List<DriveInfo>();
-        foreach (var s in Query("SELECT Model, Size, MediaType FROM Win32_DiskDrive"))
+        foreach (var s in Query("SELECT Model, Size, MediaType, DeviceID FROM Win32_DiskDrive"))
         {
             var size = s["Size"] != null ? $"{Convert.ToUInt64(s["Size"]) / 1024 / 1024 / 1024} GB" : "?";
             var model = s["Model"]?.ToString() ?? "?";
@@ -135,10 +138,16 @@ public static class SpecService
             }
             // No drive temp: LHM's storage sensor proved unreliable (94C
             // for a drive HD Sentinel reads at 39C), so none is shown.
+            // Volumes (letters + used/free) come from the mapping above;
+            // a drive with no mounted volume gets an empty list.
+            var deviceId = s["DeviceID"]?.ToString() ?? "";
+            var volumes = deviceId != "" && volumesByDrive.TryGetValue(deviceId, out var v)
+                ? v : new List<VolumeInfo>();
             drives.Add(new DriveInfo(
                 model,
                 size,
-                mediaType));
+                mediaType,
+                volumes));
         }
 
         var osCaption = "";
@@ -230,6 +239,73 @@ public static class SpecService
     }
 
     /// <summary>
+    /// Map each physical drive (Win32_DiskDrive.DeviceID, e.g.
+    /// "\\.\PHYSICALDRIVE0") to its volumes (letters + sizes), via the
+    /// DiskDriveToDiskPartition and LogicalDiskToPartition associators,
+    /// joined in memory by parsing the DeviceID out of each reference
+    /// path. Network drives and CD-ROMs have no physical disk here, so
+    /// they never appear. A failure just means no volume lines — the
+    /// drive list itself is unaffected.
+    /// </summary>
+    private static Dictionary<string, List<VolumeInfo>> GetVolumesByDrive()
+    {
+        var result = new Dictionary<string, List<VolumeInfo>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            // Logical disks with sizes (skip network + optical: no Size, or DriveType 4/5).
+            var logical = new Dictionary<string, (ulong Total, ulong Free)>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in Query("SELECT DeviceID, Size, FreeSpace, DriveType FROM Win32_LogicalDisk"))
+            {
+                var letter = s["DeviceID"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(letter)) continue;
+                if (s["DriveType"] is uint dt && (dt == 4 || dt == 5)) continue; // network, CD-ROM
+                if (s["Size"] == null || s["FreeSpace"] == null) continue;
+                logical[letter] = (Convert.ToUInt64(s["Size"]), Convert.ToUInt64(s["FreeSpace"]));
+            }
+            if (logical.Count == 0) return result;
+
+            // Partition -> drive, then letter -> partition, joined on DeviceID.
+            var partitionToDrive = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in Query("SELECT Antecedent, Dependent FROM Win32_DiskDriveToDiskPartition"))
+            {
+                var drive = DeviceIdFromPath(s["Antecedent"]?.ToString());
+                var part = DeviceIdFromPath(s["Dependent"]?.ToString());
+                if (drive != null && part != null) partitionToDrive[part] = drive;
+            }
+            foreach (var s in Query("SELECT Antecedent, Dependent FROM Win32_LogicalDiskToPartition"))
+            {
+                var part = DeviceIdFromPath(s["Antecedent"]?.ToString());
+                var letter = DeviceIdFromPath(s["Dependent"]?.ToString());
+                if (part == null || letter == null) continue;
+                if (!partitionToDrive.TryGetValue(part, out var drive)) continue;
+                if (!logical.TryGetValue(letter, out var sizes)) continue;
+                if (!result.TryGetValue(drive, out var list)) { list = new List<VolumeInfo>(); result[drive] = list; }
+                list.Add(new VolumeInfo(letter, sizes.Total, sizes.Free));
+            }
+            // Sort each drive's volumes by letter (C: before D:).
+            foreach (var list in result.Values)
+                list.Sort((a, b) => string.Compare(a.Letter, b.Letter, StringComparison.OrdinalIgnoreCase));
+            Logger.Write($"Volumes: mapped {result.Count} drive(s) to letters.");
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("Volume mapping failed: " + ex.Message);
+        }
+        return result;
+    }
+
+    /// <summary>Pull the DeviceID value out of a WMI reference path
+    /// (e.g. ...Win32_DiskDrive.DeviceID="\\.\PHYSICALDRIVE0"). The
+    /// reference may arrive as a string or a ManagementPath — ToString()
+    /// gives the path either way.</summary>
+    private static string? DeviceIdFromPath(string? path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(path, @"DeviceID=""([^""]+)""");
+        return m.Success ? m.Groups[1].Value : null;
+    }
+
+    /// <summary>
     /// Query the Storage WMI namespace (MSFT_PhysicalDisk lives there,
     /// not in root\cimv2). Readable without admin; a failure just means
     /// the caller falls back to the Win32_DiskDrive strings.
@@ -308,7 +384,7 @@ public static class SpecService
         // driver is the real gap, so name it then.
         var temp = m.Cpu.PackageTempC.HasValue ? $"  Package temp: {m.Cpu.PackageTempC.Value}C"
                  : IsElevated() ? "  Package temp: not available (PawnIO driver not installed)"
-                 : "  Package temp: restart as admin to check cpu temp";
+                 : "  Package temp: Restart as Admin to check CPU temperature";
         sb.AppendLine(temp);
         if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
             && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
@@ -343,7 +419,11 @@ public static class SpecService
 
         sb.AppendLine("\nSTORAGE DRIVES");
         foreach (var d in m.Drives)
+        {
             sb.AppendLine($"  {d.Model} - {d.SizeText} [{d.MediaType}]");
+            foreach (var v in d.Volumes)
+                sb.AppendLine($"    {v.Letter} {FormatSize(v.TotalBytes - v.FreeBytes)} used · {FormatSize(v.FreeBytes)} free");
+        }
 
         sb.AppendLine("\nOPERATING SYSTEM");
         sb.AppendLine($"  {m.Os.Caption} ({m.Os.Architecture}) - Build {m.Os.BuildNumber}");
@@ -405,6 +485,16 @@ public static class SpecService
         return m.Success
             ? (m.Groups[1].Value + "&" + m.Groups[2].Value).ToUpperInvariant()
             : null;
+    }
+
+    /// <summary>Bytes as "465 GB", or "5.5 TB" once past 1024 GB
+    /// (one decimal — a 5589 GB volume reads better as "5.5 TB").
+    /// Used for the per-volume used/free figures (0.15).</summary>
+    public static string FormatSize(ulong bytes)
+    {
+        const double gib = 1024.0 * 1024 * 1024;
+        double gb = bytes / gib;
+        return gb >= 1024 ? $"{gb / 1024:0.#} TB" : $"{gb:0} GB";
     }
 
     private static string FormatVram(ulong bytes)

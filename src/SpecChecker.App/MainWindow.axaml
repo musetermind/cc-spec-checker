@@ -1,67 +1,70 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SpecChecker.App.MainWindow"
-        Width="1000" Height="600"
+        Width="1000" Height="720"
         WindowStartupLocation="CenterScreen"
         Background="Black" Foreground="#00FF00" FontFamily="Consolas">
   <!-- The window title AND the header title (both with the version)
        are set in code from AppInfo.Version, so there is one version
        source of truth. -->
-  <!-- Styles live in Window.Styles in Avalonia (not Window.Resources,
-       which is for resource dictionaries). -->
-  <Window.Styles>
-    <!-- Header action buttons -->
-    <Style Selector="Button.header">
-      <Setter Property="Background" Value="#0D1F0D"/>
-      <Setter Property="Foreground" Value="#00FF00"/>
-      <Setter Property="BorderBrush" Value="#1E521E"/>
-      <Setter Property="BorderThickness" Value="1"/>
-      <Setter Property="Padding" Value="14,7"/>
-      <Setter Property="FontSize" Value="13"/>
-      <Setter Property="CornerRadius" Value="4"/>
-      <Setter Property="Cursor" Value="Hand"/>
-    </Style>
-    <Style Selector="Button.header:pointerover">
-      <Setter Property="Background" Value="#1A3A1A"/>
-      <Setter Property="BorderBrush" Value="#2E7D2E"/>
-    </Style>
-  </Window.Styles>
+  <!-- Button colours live in code (MainWindow.ApplyTheme), not in XAML
+       styles, so the Dark / Light / System theme toggle (0.15) can swap
+       every button's palette at runtime. XAML only holds the dark
+       starting values; ApplyTheme overrides them before the window shows. -->
 
-  <Grid RowDefinitions="Auto,*,Auto">
+  <Grid RowDefinitions="Auto,Auto,*,Auto">
 
     <!-- Header -->
-    <Border Grid.Row="0" Background="#0A0F0A" Padding="16,10" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
+    <Border x:Name="HeaderBorder" Grid.Row="0" Background="#0A0F0A" Padding="16,10" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
       <DockPanel>
         <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
           <TextBlock x:Name="HeaderTitle" Text="CC SPEC CHECKER" FontSize="22" FontWeight="Bold" Foreground="#00FF00"/>
-          <!-- Shop credit (Sithu, 0.14) — replaces the old tagline. -->
+          <!-- Shop credit (Sithu, 0.14) — replaces the old tagline.
+               The shop name is a button to the CC Facebook page (0.15). -->
           <StackPanel Spacing="1">
-            <TextBlock Text="Presented to you by CC Computer Corner (Yangon, Myanmar)" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
-            <TextBlock Text="+959777742043" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
-            <TextBlock Text="+959967174417" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock x:Name="CreditPrefix" Text="Presented to you by " FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+              <Button x:Name="FacebookButton" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" Click="OnFacebook" VerticalAlignment="Center">
+                <TextBlock Text="CC Computer Corner" FontSize="11" Opacity="0.7" TextDecorations="Underline"/>
+              </Button>
+              <TextBlock x:Name="CreditSuffix" Text=" (Yangon, Myanmar)" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            </StackPanel>
+            <TextBlock x:Name="CreditPhone1" Text="+959777742043" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            <TextBlock x:Name="CreditPhone2" Text="+959967174417" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
           </StackPanel>
+          <!-- Theme toggle (Sithu, 0.15): one button, cycles Dark -> Light -> System. -->
+          <Button x:Name="ThemeButton" Content="Theme: Dark" Click="OnThemeClick"
+                  HorizontalAlignment="Left" Margin="0,6,0,0" Cursor="Hand"/>
         </StackPanel>
+        <!-- Refresh / Copy / Save snapshot live in the tool strip below
+             (0.15, two rows of six). Only the conditional admin button
+             stays here — it hides when already elevated, so it does not
+             belong in a fixed grid. -->
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
-          <Button Classes="header" Content="Refresh" Click="OnRefresh"/>
-          <Button Classes="header" Content="Copy" Click="OnCopy"/>
-          <Button Classes="header" Content="Save snapshot" Click="OnSaveSnapshot"/>
-          <Button x:Name="AdminButton" Classes="header" Content="Restart as administrator" Click="OnRestartAsAdmin"/>
+          <Button x:Name="AdminButton" Content="Restart as administrator" Click="OnRestartAsAdmin"/>
         </StackPanel>
       </DockPanel>
     </Border>
 
+    <!-- Quick-launch tool strip (Sithu, 0.15): two rows of six buttons —
+         Refresh / Copy / Save snapshot plus the Windows tools. Built in
+         code (BuildToolStrip) so the buttons follow the active theme. -->
+    <Border x:Name="ToolStripBorder" Grid.Row="1" Background="#0A0F0A" Padding="16,8" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
+      <ContentControl x:Name="ToolStripArea"/>
+    </Border>
+
     <!-- Content area: the dashboard cards — each one carries all its
          info, so a glance is enough (Sithu, 0.13). No detail sections. -->
-    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled">
       <ContentControl x:Name="ContentArea" Margin="16"/>
     </ScrollViewer>
 
     <!-- Status bar -->
-    <Border Grid.Row="2" Background="#0A0F0A" Padding="12,6" BorderBrush="#1E521E" BorderThickness="0,1,0,0">
+    <Border x:Name="StatusBorder" Grid.Row="3" Background="#0A0F0A" Padding="12,6" BorderBrush="#1E521E" BorderThickness="0,1,0,0">
       <DockPanel>
         <TextBlock x:Name="StatusText" Text="Ready." Foreground="#00FF00" VerticalAlignment="Center"/>
-        <TextBlock Text="Read-only — this tool changes nothing on the machine." DockPanel.Dock="Right"
+        <TextBlock x:Name="ReadOnlyNote" Text="Read-only — this tool changes nothing on the machine." DockPanel.Dock="Right"
                    Foreground="#00FF00" Opacity="0.5" VerticalAlignment="Center"/>
       </DockPanel>
     </Border>
