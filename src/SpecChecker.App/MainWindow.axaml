@@ -17,21 +17,21 @@
     <Border x:Name="HeaderBorder" Grid.Row="0" Background="#0A0F0A" Padding="16,10" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
       <DockPanel>
         <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
-          <TextBlock x:Name="HeaderTitle" Text="CC SPEC CHECKER" FontSize="22" FontWeight="Bold" Foreground="#00FF00"/>
+          <TextBlock x:Name="HeaderTitle" Text="" FontSize="22" FontWeight="Bold" Foreground="#00FF00"/>
           <!-- Shop credit (Sithu, 0.14) — replaces the old tagline.
                The shop name is a button to the CC Facebook page (0.15). -->
           <StackPanel Spacing="1">
             <StackPanel Orientation="Horizontal">
               <TextBlock x:Name="CreditPrefix" Text="Presented to you by " FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
               <Button x:Name="FacebookButton" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" Click="OnFacebook" VerticalAlignment="Center">
-                <TextBlock x:Name="FacebookButtonText" Text="CC Computer Corner" FontSize="11" Opacity="0.7" TextDecorations="Underline"/>
+                <TextBlock x:Name="FacebookButtonText" Text="" FontSize="11" Opacity="0.7" TextDecorations="Underline"/>
               </Button>
               <!-- Plain-text shop name, shown instead of the button when
                    the brand has no Facebook page linked. -->
               <TextBlock x:Name="ShopNameText" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00" VerticalAlignment="Center" IsVisible="False"/>
-              <TextBlock x:Name="CreditSuffix" Text=" (Yangon, Myanmar)" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+              <TextBlock x:Name="CreditSuffix" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
             </StackPanel>
-            <TextBlock x:Name="CreditContact" Text="Contact - ccpcbuilding@gmail.com" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            <TextBlock x:Name="CreditContact" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
           </StackPanel>
           <!-- Theme toggle (Sithu, 0.15): one button, cycles Dark -> Light -> System. -->
           <Button x:Name="ThemeButton" Content="Theme: Dark" Click="OnThemeClick"
