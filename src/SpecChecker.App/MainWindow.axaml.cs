@@ -54,6 +54,9 @@ public partial class MainWindow : Window
         // The version lives in one place (AppInfo.Version) so the title
         // can never drift from the release number again.
         Title = $"CC Spec Checker v{AppInfo.Version} — Computer Corner";
+        // The header title carries the version too (Sithu, 0.14), with
+        // the shop credit under it in the XAML.
+        HeaderTitle.Text = $"CC SPEC CHECKER v{AppInfo.Version}";
         // The app runs unelevated by default (choice, not forced admin):
         // the core readings work without elevation. Offer the restart
         // button only when we are NOT already elevated — when already
