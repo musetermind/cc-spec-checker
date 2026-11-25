@@ -34,6 +34,19 @@ internal static class AdlTemp
     [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
     private static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
 
+    // CRT malloc/free (msvcrt.dll). ADL is a C-runtime DLL and its sample
+    // uses the CRT malloc as the callback — the memory ADL allocates through
+    // the callback must come from the CRT heap, because ADL may free it with
+    // the CRT free. Using Marshal.AllocHGlobal (Windows heap) for the
+    // callback caused an access violation (0xc0000005) on the bench:
+    // a heap mismatch. So both the callback and the AdapterInfo free below
+    // go through msvcrt, matching the ADL sample exactly.
+    [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr malloc(int size);
+
+    [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void free(IntPtr ptr);
+
     // ADL malloc callback: void* (__stdcall *)(int). ADL calls it to allocate
     // the AdapterInfo array; we free that pointer ourselves afterwards.
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -98,7 +111,8 @@ internal static class AdlTemp
         }
 
         // Keep the malloc delegate alive for the whole ADL session.
-        MallocCallback malloc = size => Marshal.AllocHGlobal(size);
+        // CRT malloc (msvcrt) — see the note on the malloc/free imports.
+        MallocCallback mallocCb = size => malloc(size);
         IntPtr context = IntPtr.Zero;
         try
         {
@@ -114,7 +128,7 @@ internal static class AdlTemp
                 return result;
             }
 
-            if (create(malloc, 1, out context) != ADL_OK || context == IntPtr.Zero)
+            if (create(mallocCb, 1, out context) != ADL_OK || context == IntPtr.Zero)
             {
                 Logger.Write("ADL: ADL2_Main_Control_Create failed.");
                 return result;
@@ -160,9 +174,9 @@ internal static class AdlTemp
                 }
                 finally
                 {
-                    // The AdapterInfo array was allocated through our malloc
-                    // callback (AllocHGlobal), so we free it the same way.
-                    try { Marshal.FreeHGlobal(infoPtr); } catch { }
+                    // The AdapterInfo array was allocated through our CRT
+                    // malloc callback, so free it with the CRT free.
+                    try { free(infoPtr); } catch { }
                 }
             }
             finally
@@ -177,7 +191,7 @@ internal static class AdlTemp
         }
         finally
         {
-            GC.KeepAlive(malloc);
+            GC.KeepAlive(mallocCb);
             try { FreeLibrary(hModule); } catch { }
         }
         return result;
