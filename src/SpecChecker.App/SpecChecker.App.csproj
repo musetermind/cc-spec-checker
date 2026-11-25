@@ -8,15 +8,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Assembly/file version. Keep in step with AppInfo.Version (it
          cannot read that const); bump both on every release. -->
-    <Version>1.9.0</Version>
+    <Version>2.0.0</Version>
     <!-- Runs UNELEVATED by default (no ApplicationManifest): WMI + DXGI +
          NVAPI all work unelevated. Only SMART and the opt-in PawnIO install
          need elevation, and those go through a helper/relaunch. -->
     <!-- v1: standalone single exe. Native libs (Skia etc.) extract on first run -->
+    <!-- The app icon (Sithu, 2.0): the CPU-on-motherboard icon. The .ico
+         is the exe icon (Explorer + taskbar); the .png is embedded as a
+         resource for the window's title-bar icon. Both are copies of the
+         files in the repo root — if the icon is ever redrawn, update the
+         root files and re-copy them here. -->
+    <ApplicationIcon>CCSpecChecker.ico</ApplicationIcon>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
   <ItemGroup>
+    <AvaloniaResource Include="CCSpecChecker-icon.png" />
     <PackageReference Include="Avalonia" Version="11.2.4" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.4" />

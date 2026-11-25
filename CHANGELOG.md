@@ -5,6 +5,13 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 0.x series ends here, the app is stable, so the next release moves to
 1.x. The version number is shown in the window title and the header.
 
+## 2.0 — 2026-11-25
+
+- The new icon is IN the app now (Sithu): the CPU-on-motherboard icon
+  is the exe icon (Explorer + taskbar) and the window's title-bar icon.
+  The binary-digits icon is gone — it looked like a friend's shop logo.
+- The window is taller and narrower: 880 x 840 (was 1000 x 720).
+
 ## 1.9 — 2026-11-25
 
 - The MEMORY channel is by stick count now (Sithu): 2 or more sticks is

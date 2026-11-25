@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using SpecChecker.Core.Services;
 
@@ -88,6 +89,19 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // The app icon (Sithu, 2.0): the CPU-on-motherboard icon, loaded
+        // from the embedded PNG for the window's title bar. Cosmetic
+        // only — if it ever fails to load, the app runs on without a
+        // title-bar icon rather than crashing (the exe icon, set by
+        // ApplicationIcon in the .csproj, still applies).
+        try
+        {
+            Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://CCSpecChecker/CCSpecChecker-icon.png")));
+        }
+        catch
+        {
+            // No title-bar icon; continue normally.
+        }
         // The version lives in one place (AppInfo.Version) so the title
         // can never drift from the release number again.
         Title = $"CC Spec Checker v{AppInfo.Version} — Computer Corner";
