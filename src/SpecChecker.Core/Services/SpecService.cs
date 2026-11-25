@@ -79,7 +79,6 @@ public static class SpecService
         var sticks = new List<RamStick>();
         ulong total = 0;
         var memType = "";
-        uint maxInterleave = 0;
         // 0.16 asked WMI for CASLatency as well — that property does NOT
         // exist on Win32_PhysicalMemory (Microsoft's class definition
         // lists 36 properties; CASLatency is not one), so the whole query
@@ -87,21 +86,20 @@ public static class SpecService
         // machine with 64 GB). The running CL lives in the SPD EEPROM on
         // the stick and is readable only via the SMBus with a driver;
         // WMI has no such field, so no CL is shown rather than a guessed
-        // one. InterleaveDataDepth IS a real property (uint16 — read it
-        // with Convert.ToUInt32, not 'is uint', the build-12 trap).
-        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer, InterleaveDataDepth FROM Win32_PhysicalMemory"))
+        // one. (InterleaveDataDepth was asked for in 0.16-1.8 for the
+        // channel mode; the 1.9 rule is by stick count, so it is not
+        // asked for any more.)
+        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer FROM Win32_PhysicalMemory"))
         {
             var cap = Convert.ToUInt64(s["Capacity"]);
             total += cap;
             uint speed = s["Speed"] is uint sp ? sp : 0;
             var vendor = s["Manufacturer"]?.ToString()?.Trim() ?? "";
-            uint depth = s["InterleaveDataDepth"] != null ? Convert.ToUInt32(s["InterleaveDataDepth"]) : 0;
-            if (depth > maxInterleave) maxInterleave = depth;
             sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor));
             if (string.IsNullOrEmpty(memType) && s["SMBIOSMemoryType"] is uint mt)
                 memType = MemoryTypeName(mt, speed);
         }
-        var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp(), ChannelModeName(sticks.Count, maxInterleave));
+        var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp(), ChannelModeName(sticks.Count));
 
         var boardMfr = "";
         var boardProduct = "";
@@ -273,25 +271,17 @@ public static class SpecService
     }
 
     /// <summary>
-    /// The channel mode to show on the MEMORY summary line — and ONLY
-    /// when WMI positively reports a multi-way interleave (Sithu, 1.8).
-    /// A "Single Channel" reading is never shown: on some boards the
-    /// BIOS reports InterleaveDataDepth 1 even when the memory
-    /// controller is running dual, so a Single reading is not
-    /// trustworthy — and a 2-stick count is a guess, not a measurement
-    /// (a board with both sticks in one channel's slots runs single).
-    /// So: depth >= 4 -> Quad, depth 2-3 -> Dual, anything else (0, 1
-    /// or unknown) -> null, and the line shows no channel at all.
+    /// The channel mode to show on the MEMORY summary line, by stick
+    /// count (Sithu, 1.9): 2 or more sticks is "Dual Channel", 1 stick
+    /// shows nothing. The 1.8 rule read WMI's InterleaveDataDepth and
+    /// showed Single when it reported 1 — the bench reported 1 with 2
+    /// sticks in it, so the depth rule is dropped; the count is what
+    /// Sithu wants shown.
     /// </summary>
-    private static string? ChannelModeName(int stickCount, uint maxInterleaveDepth)
+    private static string? ChannelModeName(int stickCount)
     {
-        string? mode = maxInterleaveDepth switch
-        {
-            >= 4 => "Quad Channel",
-            >= 2 => "Dual Channel",
-            _ => null,
-        };
-        Logger.Write($"RAM channel: sticks={stickCount}, max InterleaveDataDepth={maxInterleaveDepth} -> {mode ?? "not shown"}.");
+        string? mode = stickCount >= 2 ? "Dual Channel" : null;
+        Logger.Write($"RAM channel: sticks={stickCount} -> {mode ?? "not shown"}.");
         return mode;
     }
 

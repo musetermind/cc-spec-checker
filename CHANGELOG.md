@@ -5,6 +5,12 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 0.x series ends here, the app is stable, so the next release moves to
 1.x. The version number is shown in the window title and the header.
 
+## 1.9 — 2026-11-25
+
+- The MEMORY channel is by stick count now (Sithu): 2 or more sticks is
+  "Dual Channel", 1 stick shows nothing. The 1.8 WMI-depth rule is
+  dropped — it reported Single on the bench from a depth of 1.
+
 ## 1.8 — 2026-11-25
 
 - Icons on every card and every tool-strip button (Sithu): vector icons
