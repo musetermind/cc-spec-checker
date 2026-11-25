@@ -31,6 +31,10 @@ public static class Branding
     /// <summary>The contact line under the credit.</summary>
     public const string ContactLine = "Contact - ccpcbuilding@gmail.com";
 
+    /// <summary>A second contact line under the contact line, e.g. the
+    /// shop's email. Empty for the CC build (no line shown).</summary>
+    public const string EmailLine = "";
+
     /// <summary>The shop's Facebook page, opened when the shop name is
     /// clicked. Null when the shop has no page linked — the name then
     /// shows as plain text, not a button. Static (not const) so the

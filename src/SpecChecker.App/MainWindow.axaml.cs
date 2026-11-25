@@ -122,6 +122,10 @@ public partial class MainWindow : Window
         }
         CreditSuffix.Text = Branding.CreditSuffix;
         CreditContact.Text = Branding.ContactLine;
+        // The second contact line (email): shown only when the brand
+        // carries one (the CC build has none).
+        CreditEmail.Text = Branding.EmailLine;
+        CreditEmail.IsVisible = !string.IsNullOrEmpty(Branding.EmailLine);
         // The small centred credit at the very bottom: shown only when
         // the brand carries one (the CC build has none).
         CreditLine.Text = Branding.CreditLine;
@@ -211,6 +215,7 @@ public partial class MainWindow : Window
         CreditPrefix.Foreground = _palette.HeadlineFg;
         CreditSuffix.Foreground = _palette.HeadlineFg;
         CreditContact.Foreground = _palette.HeadlineFg;
+        CreditEmail.Foreground = _palette.HeadlineFg;
         FacebookButton.Foreground = _palette.HeadlineFg;
         ShopNameText.Foreground = _palette.HeadlineFg;
         StatusText.Foreground = _palette.HeadlineFg;

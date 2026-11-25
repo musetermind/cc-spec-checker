@@ -32,6 +32,7 @@
               <TextBlock x:Name="CreditSuffix" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
             </StackPanel>
             <TextBlock x:Name="CreditContact" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            <TextBlock x:Name="CreditEmail" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
           </StackPanel>
           <!-- Theme toggle (Sithu, 0.15): one button, cycles Dark -> Light -> System. -->
           <Button x:Name="ThemeButton" Content="Theme: Dark" Click="OnThemeClick"
