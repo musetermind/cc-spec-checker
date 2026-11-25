@@ -31,6 +31,9 @@ public static class SpecService
         var (vramByPci, vramByName) = GetVramFromRegistry();
         // GPU temperature via NVAPI (NVIDIA driver, no kernel driver needed).
         var nvTemps = NvApiTemp.GetGpuTemps();
+        // GPU temperature via ADL (AMD driver, no kernel driver needed),
+        // keyed by adapter name for matching against the WMI card name.
+        var adlTemps = AdlTemp.GetGpuTemps();
         var gpuIndex = 0;
         foreach (var s in Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
         {
@@ -59,6 +62,8 @@ public static class SpecService
             var temp = "";
             if (nvTemps.TryGetValue(gpuIndex, out var nv) && nv.tempC >= 0)
                 temp = $" - {nv.tempC}C";
+            else if (TryGetAdlTemp(name, adlTemps, out var adlC))
+                temp = $" - {adlC}C";
             sb.AppendLine($"  {name}{vram}{temp}");
             gpuIndex++;
         }
@@ -161,6 +166,28 @@ public static class SpecService
         return m.Success
             ? (m.Groups[1].Value + "&" + m.Groups[2].Value).ToUpperInvariant()
             : null;
+    }
+
+    /// <summary>Match a WMI card name against the ADL adapter names.
+    /// Exact match first, then a contains-match either way (ADL sometimes
+    /// reports "Radeon RX 7900 XT" where WMI reports "AMD Radeon RX 7900 XT").
+    /// Returns false when no ADL entry matches — the card is not AMD, or ADL
+    /// could not read it.</summary>
+    private static bool TryGetAdlTemp(string wmiName, Dictionary<string, int> adlTemps, out int tempC)
+    {
+        tempC = 0;
+        if (adlTemps.Count == 0 || string.IsNullOrWhiteSpace(wmiName)) return false;
+        if (adlTemps.TryGetValue(wmiName, out tempC)) return true;
+        foreach (var kv in adlTemps)
+        {
+            if (wmiName.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)
+                || kv.Key.Contains(wmiName, StringComparison.OrdinalIgnoreCase))
+            {
+                tempC = kv.Value;
+                return true;
+            }
+        }
+        return false;
     }
 
     private static string FormatVram(ulong bytes)
