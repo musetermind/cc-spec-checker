@@ -7,27 +7,27 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 
 ## 2.0 — 2026-11-25
 
-- The new icon is IN the app now (Sithu): the CPU-on-motherboard icon
-  is the exe icon (Explorer + taskbar) and the window's title-bar icon.
-  The binary-digits icon is gone — it looked like a friend's shop logo.
+- The CPU-on-motherboard icon is in the app now: the exe icon (Explorer
+  + taskbar) and the window's title-bar icon. It replaces the
+  binary-digits icon.
 - The window is taller and narrower: 880 x 840 (was 1000 x 720).
 
 ## 1.9 — 2026-11-25
 
-- The MEMORY channel is by stick count now (Sithu): 2 or more sticks is
+- The MEMORY channel is by stick count now: 2 or more sticks is
   "Dual Channel", 1 stick shows nothing. The 1.8 WMI-depth rule is
-  dropped — it reported Single on the bench from a depth of 1.
+  dropped — it reported Single from a depth of 1 on some boards.
 
 ## 1.8 — 2026-11-25
 
-- Icons on every card and every tool-strip button (Sithu): vector icons
+- Icons on every card and every tool-strip button: vector icons
   from Material Design Icons (Apache 2.0) — a chip for the processor, a
   card for the graphics, a stick for the memory, a board for the
   motherboard, a drive for storage, the Windows logo for the OS — and
   matching icons on Refresh, Copy, Save snapshot and the Windows tools,
   plus a shield on the "Restart as administrator" button. They take the
   theme colour, so they stay green in both themes.
-- The MEMORY line no longer says "Single Channel" (Sithu): a Single
+- The MEMORY line no longer says "Single Channel": a Single
   reading is not trustworthy — some boards report InterleaveDataDepth 1
   even when the memory controller runs dual — and a 2-stick count is a
   guess, not a measurement. The channel is shown only when WMI
@@ -39,7 +39,7 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 ## 0.17 — 2026-11-25
 
 - Fixed: RAM detection was broken in 0.16 — the MEMORY card showed "0 GB /
-  No RAM sticks found" on a machine with 64 GB installed. The 0.16 query
+  No RAM sticks found" even though RAM was installed. The 0.16 query
   asked WMI for CASLatency, which is not a Win32_PhysicalMemory property
   (Microsoft's class definition lists 36 properties; CASLatency is not
   one), so the whole query failed and the app saw zero sticks. The query
@@ -58,10 +58,9 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
   memory controller runs them all at that timing. The channel comes from
   WMI's interleave depth when the BIOS reports it, otherwise from the
   stick count.
-- GRAPHICS card: the board-partner brand next to the model — "NVIDIA
-  GeForce RTX 3070 · Zotac". Read from the PCI subsystem vendor ID in
-  the device's PNPDeviceID; unknown vendors show no brand rather than a
-  guess.
+- GRAPHICS card: the board-partner brand next to the model. Read from the
+  PCI subsystem vendor ID in the device's PNPDeviceID; unknown vendors
+  show no brand rather than a guess.
 - Fixed: the drive-letter lines (0.15) never appeared — the volume
   mapping joined on a DeviceID that WMI object paths escape with doubled
   backslashes, so no drive ever matched its volumes. Unescaped now.
@@ -118,7 +117,7 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
   drives).
 - Drive temperature removed — the sensor read 94°C for a drive that reads
   39°C in HD Sentinel.
-- DDR type fixed: the bench BIOS reports code 26 for DDR4 DIMMs; the
+- DDR type fixed: some BIOSes report code 26 for DDR4 DIMMs; the
   mapping now uses the correct WMI codes (25 = DDR4, 33 = DDR5) with a
   speed cross-check.
 
@@ -151,8 +150,7 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 - AMD GPU temperature (ADL) removed entirely — the ADL builds crashed on
   real AMD hardware at launch (0xc0000005), twice, and the heap fix did
   not resolve it. AMD cards show no temperature rather than crashing.
-- Proven clean on the bench: VRAM "8 GB", GPU 40°C, CPU 38°C when
-  elevated.
+- Verified clean on real hardware.
 
 ## 0.6 — 2026-11-25
 
@@ -177,8 +175,7 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 
 ## 0.2 — 2026-11-25
 
-- GPU temperature via NVAPI (NVIDIA driver, no kernel driver needed) —
-  proven on the bench at 41°C.
+- GPU temperature via NVAPI (NVIDIA driver, no kernel driver needed).
 - CPU and board temperatures via LibreHardwareMonitor (PawnIO driver,
   opt-in).
 - CPU temperature honestly reports "not available (PawnIO driver not
@@ -187,8 +184,8 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 ## 0.1 — 2026-11-25
 
 - First build: portable single exe, read-only, unelevated by default.
-- VRAM via DXGI — proven on the bench: an 8 GB RTX 3070 reads "8192MB",
-  where Speccy showed "4095MB" (WMI's 32-bit AdapterRAM cap).
+- VRAM via DXGI: an 8 GB card reads "8192MB", where Speccy showed
+  "4095MB" (WMI's 32-bit AdapterRAM cap).
 - Dashboard cards for processor, graphics, memory, motherboard, storage
   and operating system; snapshot (save the report as text, copy to
   clipboard).
