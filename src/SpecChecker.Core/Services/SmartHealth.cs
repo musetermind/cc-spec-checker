@@ -11,8 +11,9 @@ namespace SpecChecker.Core.Services;
 /// Full SMART attribute detail (temperature, power-on hours, reallocated
 /// sectors) needs DeviceIoControl and admin too — that is the next step;
 /// this is the health headline first.
+/// Public because SpecModel (public) exposes its ReadResult.
 /// </summary>
-internal static class SmartHealth
+public static class SmartHealth
 {
     public record DriveHealth(string InstanceName, bool PredictFailure, uint Reason);
 
