@@ -17,17 +17,19 @@ public static class SpecService
         var cpuName = "";
         var cores = 0;
         var threads = 0;
-        uint l2 = 0, l3 = 0, maxClock = 0;
-        foreach (var s in Query("SELECT Name, NumberOfCores, NumberOfLogicalProcessors, L2CacheSize, L3CacheSize, MaxClockSpeed FROM Win32_Processor"))
+        uint l2 = 0, l3 = 0;
+        foreach (var s in Query("SELECT Name, NumberOfCores, NumberOfLogicalProcessors, L2CacheSize, L3CacheSize FROM Win32_Processor"))
         {
             cpuName = s["Name"]?.ToString() ?? "?";
             cores = s["NumberOfCores"] is uint c ? (int)c : 0;
             threads = s["NumberOfLogicalProcessors"] is uint t ? (int)t : 0;
             l2 = s["L2CacheSize"] is uint l2v ? l2v : 0;
             l3 = s["L3CacheSize"] is uint l3v ? l3v : 0;
-            maxClock = s["MaxClockSpeed"] is uint mc ? mc : 0;
         }
-        var cpu = new CpuInfo(cpuName, cores, threads, l2, l3, maxClock, pkg, hot);
+        // No max clock: WMI's MaxClockSpeed is the base clock (3.2 GHz
+        // for a 14900K), not the boost, so showing it as "max" was
+        // wrong (Sithu, build 11). The field is gone entirely.
+        var cpu = new CpuInfo(cpuName, cores, threads, l2, l3, pkg, hot);
 
         var dxgiVram = DxgiVram.GetVramByPciId();
         var (vramByPci, vramByName) = GetVramFromRegistry();
@@ -83,7 +85,7 @@ public static class SpecService
             var vendor = s["Manufacturer"]?.ToString()?.Trim() ?? "";
             sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor));
             if (string.IsNullOrEmpty(memType) && s["SMBIOSMemoryType"] is uint mt)
-                memType = MemoryTypeName(mt);
+                memType = MemoryTypeName(mt, speed);
         }
         var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp());
 
@@ -99,32 +101,18 @@ public static class SpecService
             bios = s["SMBIOSBIOSVersion"]?.ToString() ?? "";
         var board = new BoardInfo(boardMfr, boardProduct, bios, boardTemp);
 
-        var driveTemps = SensorService.GetDriveTemps();
         var drives = new List<DriveInfo>();
         foreach (var s in Query("SELECT Model, Size, MediaType FROM Win32_DiskDrive"))
         {
             var size = s["Size"] != null ? $"{Convert.ToUInt64(s["Size"]) / 1024 / 1024 / 1024} GB" : "?";
             var model = s["Model"]?.ToString() ?? "?";
-            // Match the LHM drive temp by model name (LHM reports the same
-            // model string). No match = no temp, never a guessed number.
-            int? temp = null;
-            foreach (var kv in driveTemps)
-            {
-                if (model.Contains(kv.Key, StringComparison.OrdinalIgnoreCase)
-                    || kv.Key.Contains(model, StringComparison.OrdinalIgnoreCase))
-                {
-                    temp = kv.Value;
-                    break;
-                }
-            }
+            // No drive temp: LHM's storage sensor proved unreliable (94C
+            // for a drive HD Sentinel reads at 39C), so none is shown.
             drives.Add(new DriveInfo(
                 model,
                 size,
-                s["MediaType"]?.ToString()?.Trim() ?? "",
-                temp));
+                s["MediaType"]?.ToString()?.Trim() ?? ""));
         }
-
-        var health = SmartHealth.GetDriveHealthDetailed();
 
         var osCaption = "";
         var osArch = "";
@@ -141,24 +129,51 @@ public static class SpecService
         foreach (var s in Query("SELECT Name FROM Win32_DesktopMonitor"))
             monitors.Add(s["Name"]?.ToString() ?? "?");
 
-        return new SpecModel(cpu, gpus, ram, board, drives, health, os, monitors);
+        return new SpecModel(cpu, gpus, ram, board, drives, os, monitors);
+    }
+
+    /// <summary>Cache sizes as "L2 32MB · L3 36MB" (only the caches that
+    /// report a size — a zero is a missing reading, not a 0MB cache).</summary>
+    public static string FormatCache(uint l2KB, uint l3KB)
+    {
+        var parts = new List<string>();
+        if (l2KB > 0) parts.Add($"L2 {l2KB / 1024}MB");
+        if (l3KB > 0) parts.Add($"L3 {l3KB / 1024}MB");
+        return string.Join(" · ", parts);
     }
 
     /// <summary>
-    /// SMBIOS memory type code to the DDR generation label. 20=DDR, 21=DDR2,
-    /// 22=DDR3, 24=DDR4, 26=DDR5 (the common ones); anything else is
-    /// reported as its raw code so a new type is never mislabeled.
+    /// SMBIOS memory type code to the DDR generation label. The WMI codes
+    /// are 20=DDR, 21=DDR2, 22=DDR2 FB-DIMM, 23=DDR3, 24=FBD2, 25=DDR4,
+    /// 33=DDR5. The LPDDR codes (26-29) are soldered memory that never
+    /// appears as a removable DIMM, so a DIMM reporting one is a BIOS
+    /// quirk — observed on the PRIME B660M-K D4, which reports 26 for
+    /// DDR4 DIMMs (build 10 showed them as "DDR5" because 26 was
+    /// wrongly mapped to DDR5). For those codes the speed decides:
+    /// DDR5 starts at 4800 MT/s, DDR4 runs below that. The raw code and
+    /// speed go to the log so the mapping is auditable.
     /// </summary>
-    private static string MemoryTypeName(uint code) => code switch
+    private static string MemoryTypeName(uint code, uint speedMHz)
     {
-        20 => "DDR",
-        21 => "DDR2",
-        22 => "DDR3",
-        23 => "DDR4", // some BIOSes report DDR4 as 23; 24 is the common code
-        24 => "DDR4",
-        26 => "DDR5",
-        _ => $"DDR (type {code})",
-    };
+        var label = code switch
+        {
+            20 => "DDR",
+            21 => "DDR2",
+            22 => "DDR2 FB-DIMM",
+            23 => "DDR3",
+            24 => "FBD2",
+            25 => "DDR4",
+            30 => "Logical non-volatile device",
+            31 => "HBM",
+            32 => "HBM2",
+            33 => "DDR5",
+            34 => "LPDDR5",
+            26 or 27 or 28 or 29 => speedMHz >= 4800 ? "DDR5" : "DDR4",
+            _ => $"DDR (type {code})",
+        };
+        Logger.Write($"RAM type: SMBIOSMemoryType={code}, Speed={speedMHz}MHz -> {label}.");
+        return label;
+    }
 
     /// <summary>True when this process is running with administrator rights.</summary>
     public static bool IsElevated()
@@ -209,10 +224,9 @@ public static class SpecService
         sb.AppendLine("  " + m.Cpu.Name);
         if (m.Cpu.Cores > 0)
             sb.AppendLine($"  Cores: {m.Cpu.Cores} · Threads: {m.Cpu.Threads}");
-        if (m.Cpu.L3CacheKB > 0 || m.Cpu.L2CacheKB > 0)
-            sb.AppendLine($"  Cache: L2 {m.Cpu.L2CacheKB / 1024}MB · L3 {m.Cpu.L3CacheKB / 1024}MB");
-        if (m.Cpu.MaxClockMHz > 0)
-            sb.AppendLine($"  Max clock: {m.Cpu.MaxClockMHz / 1000.0:0.#} GHz");
+        var cache = FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
+        if (!string.IsNullOrEmpty(cache))
+            sb.AppendLine($"  Cache: {cache}");
         // CPU temp: when unelevated, point at the fix (restart as admin)
         // instead of naming the driver — that is what actually unlocks it
         // on this bench. When already elevated and still no temp, the
@@ -254,30 +268,7 @@ public static class SpecService
 
         sb.AppendLine("\nSTORAGE DRIVES");
         foreach (var d in m.Drives)
-        {
-            var dt = d.TempC.HasValue ? $" - {d.TempC.Value}C" : "";
-            sb.AppendLine($"  {d.Model} - {d.SizeText} [{d.MediaType}]{dt}");
-        }
-
-        sb.AppendLine("\nDRIVE HEALTH (SMART)");
-        if (m.DriveHealth.Drives.Count == 0)
-        {
-            var why = m.DriveHealth.Failure switch
-            {
-                SmartHealth.NoDataReason.AccessDenied => "needs administrator rights",
-                SmartHealth.NoDataReason.NotExposed => "not exposed by these drives via WMI (NVMe/USB drives often do not publish it)",
-                _ => "could not be read",
-            };
-            sb.AppendLine($"  SMART data not available ({why})");
-        }
-        else
-        {
-            foreach (var h in m.DriveHealth.Drives)
-            {
-                var status = h.PredictFailure ? "FAILURE PREDICTED" : "OK";
-                sb.AppendLine($"  {h.InstanceName} - {status} ({SmartHealth.ReasonLabel(h.Reason)})");
-            }
-        }
+            sb.AppendLine($"  {d.Model} - {d.SizeText} [{d.MediaType}]");
 
         sb.AppendLine("\nOPERATING SYSTEM");
         sb.AppendLine($"  {m.Os.Caption} ({m.Os.Architecture}) - Build {m.Os.BuildNumber}");

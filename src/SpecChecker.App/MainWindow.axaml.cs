@@ -12,13 +12,19 @@ namespace SpecChecker.App;
 
 /// <summary>
 /// Modern dashboard UI. The engine hands us a structured SpecModel; this
-/// window renders it as cards (Summary) and label/value detail panels.
-/// The plain-text report still exists for Copy and Save snapshot.
+/// window renders it on ONE scrolling page: the cards on top, then every
+/// detail section below (no tabs — Sithu, build 11). Clicking a card
+/// scrolls to its section. The plain-text report still exists for Copy
+/// and Save snapshot.
 /// </summary>
 public partial class MainWindow : Window
 {
     private SpecModel? _model;
     private string _fullReport = "";
+    // The detail sections on the page, keyed so a card click can scroll
+    // to its section ("CPU", "Graphics", "RAM", "Motherboard", "Storage",
+    // "Operating System").
+    private readonly Dictionary<string, Control> _sections = new(StringComparer.OrdinalIgnoreCase);
 
     // Colours for the green-on-black identity, refined: cards sit a touch
     // lighter than the page, borders are a muted green, headlines are the
@@ -32,7 +38,7 @@ public partial class MainWindow : Window
 
     // Temperature colour scale (Sithu's bands): up to 70C green, up to 80C
     // yellow, up to 97C orange, above that red. Applies to CPU, GPU (and
-    // hotspot), board, RAM and drive temps.
+    // hotspot), board and RAM temps.
     private static readonly IBrush TempGreen = new SolidColorBrush(Color.Parse("#00FF00"));
     private static readonly IBrush TempYellow = new SolidColorBrush(Color.Parse("#FFD700"));
     private static readonly IBrush TempOrange = new SolidColorBrush(Color.Parse("#FF8C00"));
@@ -72,7 +78,7 @@ public partial class MainWindow : Window
             StatusText.Text = "Reading hardware...";
             _model = SpecService.GetModel();
             _fullReport = SpecService.GetReport();
-            ShowCategory("Summary");
+            ContentArea.Content = BuildPage(_model);
             StatusText.Text = $"Ready. Read at {DateTime.Now:HH:mm:ss}.";
         }
         catch (Exception ex)
@@ -91,41 +97,40 @@ public partial class MainWindow : Window
         }
     }
 
-    // ----- Navigation -----
+    // ----- One page: cards on top, every section below -----
 
-    private void OnCategoryChanged(object? sender, SelectionChangedEventArgs e)
+    /// <summary>
+    /// The whole page: the dashboard cards, then every detail section
+    /// stacked in the same scroll (no tabs). Card clicks scroll to
+    /// their section via _sections.
+    /// </summary>
+    private Control BuildPage(SpecModel m)
     {
-        if (CategoryList.SelectedItem is ListBoxItem item && item.Content is string category)
-            ShowCategory(category);
+        _sections.Clear();
+        var page = new StackPanel { Spacing = 0 };
+        page.Children.Add(BuildSummary(m));
+        AddSection(page, "CPU", "Processor", CpuRows(m));
+        AddSection(page, "Graphics", "Graphics Card", GpuRows(m));
+        AddSection(page, "RAM", "Memory (RAM)", RamRows(m));
+        AddSection(page, "Motherboard", "Motherboard", BoardRows(m));
+        AddSection(page, "Storage", "Storage Drives", DriveRows(m));
+        AddSection(page, "Operating System", "Operating System", OsRows(m));
+        return page;
     }
 
-    private void ShowCategory(string category)
+    private void AddSection(StackPanel page, string key, string title, List<(string Label, string Value, IBrush? ValueBrush)> rows)
     {
-        if (_model == null) return;
-        ContentArea.Content = category switch
-        {
-            "Summary" => BuildSummary(_model),
-            "Operating System" => BuildDetail("Operating System", OsRows(_model)),
-            "CPU" => BuildDetail("Processor", CpuRows(_model)),
-            "RAM" => BuildDetail("Memory (RAM)", RamRows(_model)),
-            "Motherboard" => BuildDetail("Motherboard", BoardRows(_model)),
-            "Graphics" => BuildDetail("Graphics Card", GpuRows(_model)),
-            "Storage" => BuildDetail("Storage Drives", DriveRows(_model)),
-            "Drive Health" => BuildDetail("Drive Health (SMART)", HealthRows(_model)),
-            _ => BuildSummary(_model),
-        };
+        var section = BuildDetail(title, rows);
+        section.Margin = new Thickness(0, 28, 0, 0);
+        _sections[key] = section;
+        page.Children.Add(section);
     }
 
-    private void GoToCategory(string category)
+    /// <summary>Scroll the page so the named section is visible (a card was clicked).</summary>
+    private void ScrollToSection(string key)
     {
-        foreach (var item in CategoryList.Items.OfType<ListBoxItem>())
-        {
-            if (item.Content is string c && c == category)
-            {
-                CategoryList.SelectedItem = item;
-                break;
-            }
-        }
+        if (_sections.TryGetValue(key, out var section))
+            section.BringIntoView();
     }
 
     // ----- Dashboard (Summary) -----
@@ -142,19 +147,18 @@ public partial class MainWindow : Window
 
         var cards = new List<Control>();
 
-        // Processor card
-        var cpuTemp = m.Cpu.PackageTempC.HasValue
-            ? $"{m.Cpu.PackageTempC.Value}C package"
-            : SpecService.IsElevated()
-                ? "temp not available (PawnIO driver not installed)"
-                : "restart as admin to check cpu temp";
-        if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
-            && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
-            cpuTemp += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
-        var cpuDetailBrush = m.Cpu.PackageTempC.HasValue
-            ? TempBrush(m.Cpu.PackageTempC.Value)
-            : (IBrush?)null;
-        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuTemp, () => GoToCategory("CPU"), cpuDetailBrush));
+        // Processor card — cores, threads and cache only (Sithu: the card
+        // is the spec line; the live temps live in the Processor section
+        // below on the same page).
+        var cpuDetail = "";
+        if (m.Cpu.Cores > 0)
+        {
+            cpuDetail = $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads";
+            var cache = SpecService.FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
+            if (!string.IsNullOrEmpty(cache))
+                cpuDetail += $" · {cache}";
+        }
+        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuDetail, () => ScrollToSection("CPU")));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
@@ -165,11 +169,11 @@ public partial class MainWindow : Window
                 + (gpu.TempC.HasValue ? $" · {gpu.TempC.Value}C" : "")
                 + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
             var gpuDetailBrush = gpu.TempC.HasValue ? TempBrush(gpu.TempC.Value) : (IBrush?)null;
-            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gDetail, () => GoToCategory("Graphics"), gpuDetailBrush));
+            cards.Add(MakeCard("GRAPHICS CARD", vram + " VRAM", gDetail, () => ScrollToSection("Graphics"), gpuDetailBrush));
         }
         else
         {
-            cards.Add(MakeCard("GRAPHICS CARD", "No GPU found", "", () => GoToCategory("Graphics")));
+            cards.Add(MakeCard("GRAPHICS CARD", "No GPU found", "", () => ScrollToSection("Graphics")));
         }
 
         // Memory card
@@ -181,29 +185,29 @@ public partial class MainWindow : Window
               + (speed > 0 ? $" @ {speed}MHz" : "")
               + (m.Ram.TempC.HasValue ? $" · {m.Ram.TempC.Value}C" : "")
             : "No RAM sticks found";
-        cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramDetail, () => GoToCategory("RAM")));
+        cards.Add(MakeCard("MEMORY", $"{totalGb} GB", ramDetail, () => ScrollToSection("RAM")));
 
         // Motherboard card
         var boardHead = string.IsNullOrWhiteSpace(m.Board.Product) ? "Unknown board" : m.Board.Product;
         var boardDetail = m.Board.Manufacturer
             + (string.IsNullOrWhiteSpace(m.Board.BiosVersion) ? "" : $" · BIOS {m.Board.BiosVersion}")
             + (m.Board.TempC.HasValue ? $" · {m.Board.TempC.Value}C" : "");
-        cards.Add(MakeCard("MOTHERBOARD", boardHead, boardDetail, () => GoToCategory("Motherboard")));
+        cards.Add(MakeCard("MOTHERBOARD", boardHead, boardDetail, () => ScrollToSection("Motherboard")));
 
-        // Storage card
+        // Storage card (no drive temp — the LHM storage sensor is
+        // unreliable; see DriveInfo).
         var first = m.Drives.FirstOrDefault();
         var storageHead = first != null ? first.Model : "No drives found";
         var storageDetail = first != null
             ? $"{first.SizeText} · {first.MediaType}"
-              + (first.TempC.HasValue ? $" · {first.TempC.Value}C" : "")
               + (m.Drives.Count > 1 ? $" · {m.Drives.Count} drives" : "")
             : "";
-        cards.Add(MakeCard("STORAGE", storageHead, storageDetail, () => GoToCategory("Storage")));
+        cards.Add(MakeCard("STORAGE", storageHead, storageDetail, () => ScrollToSection("Storage")));
 
         // Operating system card
         var osHead = string.IsNullOrWhiteSpace(m.Os.Caption) ? "Unknown OS" : ShortOs(m.Os.Caption);
         var osDetail = $"{m.Os.Architecture} · Build {m.Os.BuildNumber} · {(m.Os.IsActivated ? "Activated" : "Not activated")}";
-        cards.Add(MakeCard("OPERATING SYSTEM", osHead, osDetail, () => GoToCategory("Operating System")));
+        cards.Add(MakeCard("OPERATING SYSTEM", osHead, osDetail, () => ScrollToSection("Operating System")));
 
         for (var i = 0; i < cards.Count; i++)
         {
@@ -217,7 +221,7 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// One dashboard card: a small muted title, a large bright headline,
-    /// and a smaller detail line. Clicking it opens that category.
+    /// and a smaller detail line. Clicking it scrolls to that section.
     /// The detail line takes the given brush when one is passed (a
     /// temperature uses its colour band); otherwise the soft green.
     /// </summary>
@@ -346,10 +350,11 @@ public partial class MainWindow : Window
         };
         if (m.Cpu.Cores > 0)
             rows.Add(("Cores / Threads", $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads", null));
-        if (m.Cpu.L3CacheKB > 0 || m.Cpu.L2CacheKB > 0)
-            rows.Add(("Cache", $"L2 {m.Cpu.L2CacheKB / 1024}MB · L3 {m.Cpu.L3CacheKB / 1024}MB", null));
-        if (m.Cpu.MaxClockMHz > 0)
-            rows.Add(("Max clock", $"{m.Cpu.MaxClockMHz / 1000.0:0.#} GHz", null));
+        var cache = SpecService.FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
+        if (!string.IsNullOrEmpty(cache))
+            rows.Add(("Cache", cache, null));
+        // No Max clock row: WMI's MaxClockSpeed is the base clock, not
+        // the boost, so showing it as "max" was wrong (Sithu, build 11).
         // CPU temp: when unelevated, point at the fix (restart as admin)
         // instead of naming the driver — that is what actually unlocks it
         // on this bench. When already elevated and still no temp, the
@@ -426,33 +431,9 @@ public partial class MainWindow : Window
             rows.Add(("Model", d.Model, null));
             rows.Add(("Size", d.SizeText, null));
             rows.Add(("Media type", d.MediaType, null));
-            if (d.TempC.HasValue)
-                rows.Add(("Temperature", $"{d.TempC.Value}C", TempBrush(d.TempC.Value)));
-            rows.Add(("", "", null));
-        }
-        if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);
-        return rows;
-    }
-
-    private static List<(string, string, IBrush?)> HealthRows(SpecModel m)
-    {
-        var rows = new List<(string, string, IBrush?)>();
-        if (m.DriveHealth.Drives.Count == 0)
-        {
-            var why = m.DriveHealth.Failure switch
-            {
-                SmartHealth.NoDataReason.AccessDenied => "needs administrator rights",
-                SmartHealth.NoDataReason.NotExposed => "not exposed by these drives via WMI (NVMe/USB drives often do not publish it)",
-                _ => "could not be read",
-            };
-            rows.Add(("SMART data", $"not available ({why})", null));
-            return rows;
-        }
-        foreach (var h in m.DriveHealth.Drives)
-        {
-            rows.Add(("Drive", h.InstanceName, null));
-            rows.Add(("Status", h.PredictFailure ? "FAILURE PREDICTED" : "OK", null));
-            rows.Add(("Reason", SmartHealth.ReasonLabel(h.Reason), null));
+            // No Temperature row: the LHM storage sensor is unreliable
+            // (94C for a drive HD Sentinel reads at 39C), so no drive
+            // temp is shown rather than a wrong number (Sithu, build 11).
             rows.Add(("", "", null));
         }
         if (rows.Count > 0) rows.RemoveAt(rows.Count - 1);

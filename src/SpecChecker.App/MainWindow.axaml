@@ -23,21 +23,6 @@
       <Setter Property="Background" Value="#1A3A1A"/>
       <Setter Property="BorderBrush" Value="#2E7D2E"/>
     </Style>
-    <!-- Left-nav items -->
-    <Style Selector="ListBoxItem.nav">
-      <Setter Property="Background" Value="Transparent"/>
-      <Setter Property="Foreground" Value="#00FF00"/>
-      <Setter Property="Padding" Value="14,11"/>
-      <Setter Property="FontSize" Value="14"/>
-      <Setter Property="Cursor" Value="Hand"/>
-    </Style>
-    <Style Selector="ListBoxItem.nav:pointerover">
-      <Setter Property="Background" Value="#0D1F0D"/>
-    </Style>
-    <Style Selector="ListBoxItem.nav:selected">
-      <Setter Property="Background" Value="#1A3A1A"/>
-      <Setter Property="FontWeight" Value="Bold"/>
-    </Style>
   </Window.Styles>
 
   <Grid RowDefinitions="Auto,*,Auto">
@@ -58,29 +43,13 @@
       </DockPanel>
     </Border>
 
-    <Grid Grid.Row="1" ColumnDefinitions="230,*">
-      <!-- Left nav -->
-      <Border Grid.Column="0" Background="#050705" BorderBrush="#1E521E" BorderThickness="0,0,1,0">
-        <ListBox x:Name="CategoryList" SelectionChanged="OnCategoryChanged"
-                 Background="Transparent" BorderThickness="0">
-          <ListBoxItem Classes="nav" Content="Summary" IsSelected="True"/>
-          <ListBoxItem Classes="nav" Content="Operating System"/>
-          <ListBoxItem Classes="nav" Content="CPU"/>
-          <ListBoxItem Classes="nav" Content="RAM"/>
-          <ListBoxItem Classes="nav" Content="Motherboard"/>
-          <ListBoxItem Classes="nav" Content="Graphics"/>
-          <ListBoxItem Classes="nav" Content="Storage"/>
-          <ListBoxItem Classes="nav" Content="Drive Health"/>
-        </ListBox>
-      </Border>
-
-      <!-- Content area: the dashboard and detail panels are built in code
-           from the structured SpecModel (MainWindow.axaml.cs). -->
-      <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto"
-                    HorizontalScrollBarVisibility="Disabled">
-        <ContentControl x:Name="ContentArea" Margin="16"/>
-      </ScrollViewer>
-    </Grid>
+    <!-- Content area: ONE scrolling page — the dashboard cards on top,
+         then every detail section below. No tabs: everything is visible
+         by scrolling (Sithu, build 11). -->
+    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+      <ContentControl x:Name="ContentArea" Margin="16"/>
+    </ScrollViewer>
 
     <!-- Status bar -->
     <Border Grid.Row="2" Background="#0A0F0A" Padding="12,6" BorderBrush="#1E521E" BorderThickness="0,1,0,0">

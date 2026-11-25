@@ -13,20 +13,19 @@ public sealed record SpecModel(
     RamInfo Ram,
     BoardInfo Board,
     List<DriveInfo> Drives,
-    SmartHealth.ReadResult DriveHealth,
     OsInfo Os,
     List<string> Monitors);
 
-/// <summary>Processor: name, core/thread counts, cache sizes (KB), max clock
-/// (MHz, the on-paper boost), package temp and hottest core temp (null when
-/// unreadable).</summary>
+/// <summary>Processor: name, core/thread counts, cache sizes (KB),
+/// package temp and hottest core temp (null when unreadable). No max
+/// clock — WMI's MaxClockSpeed is the base clock, not the boost, so
+/// showing it as "max" was wrong (Sithu, build 11).</summary>
 public sealed record CpuInfo(
     string Name,
     int Cores,
     int Threads,
     uint L2CacheKB,
     uint L3CacheKB,
-    uint MaxClockMHz,
     int? PackageTempC,
     int? HottestCoreTempC);
 
@@ -48,9 +47,11 @@ public sealed record RamInfo(List<RamStick> Sticks, ulong TotalBytes, string Mem
 public sealed record BoardInfo(string Manufacturer, string Product, string BiosVersion, int? TempC);
 
 /// <summary>One storage drive: model, size as a display string ("465 GB"),
-/// media type, and the drive temp in °C (null when no sensor reports one).
+/// and media type. No drive temp — LHM's storage temperature sensor is
+/// unreliable (it reported 94C for a drive HD Sentinel reads at 39C), so
+/// no temp is shown rather than a wrong number (Sithu, build 11).
 /// No health percentage here — Sithu: SSD health does not matter.</summary>
-public sealed record DriveInfo(string Model, string SizeText, string MediaType, int? TempC);
+public sealed record DriveInfo(string Model, string SizeText, string MediaType);
 
 /// <summary>Operating system: caption, architecture, build number, and
 /// whether Windows is activated (LicenseStatus 1 = Licensed).</summary>

@@ -87,35 +87,13 @@ internal static class SensorService
         return null;
     }
 
-    /// <summary>
-    /// Drive temperatures in °C, keyed by the drive name LHM reports
-    /// (usually the model string). Empty when no drive reports a temp.
-    /// Read from the Storage hardware (needs IsStorageEnabled).
-    /// </summary>
-    public static Dictionary<string, int> GetDriveTemps()
-    {
-        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        var computer = EnsureOpen();
-        if (computer == null) return result;
-        try
-        {
-            computer.Accept(new UpdateVisitor());
-            foreach (var hw in computer.Hardware)
-            {
-                if (hw.HardwareType != HardwareType.Storage) continue;
-                foreach (var s in hw.Sensors)
-                {
-                    if (s.SensorType == SensorType.Temperature && s.Value.HasValue)
-                        result[hw.Name] = (int)Math.Round(s.Value.Value);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.Write("LHM drive temp read failed: " + ex.GetType().Name + ": " + ex.Message);
-        }
-        return result;
-    }
+    // Drive temperatures are NOT read here. LHM's storage temperature
+    // sensor proved unreliable on the bench: it reported 94C for the
+    // ZHITAI Ti600 while HD Sentinel read the same drive at 39C
+    // (Sithu, build 11). Showing a wrong temp is worse than showing
+    // none, so the storage hardware stays disabled and no drive temp
+    // is ever shown. If drive temps come back one day, they need a
+    // verified source (SMART via DeviceIoControl), not this sensor.
 
     private static Computer? EnsureOpen()
     {
@@ -129,14 +107,18 @@ internal static class SensorService
                 IsMotherboardEnabled = true,
                 IsGpuEnabled = true,
                 IsMemoryEnabled = true,
-                IsStorageEnabled = true,
+                // Storage sensors stay OFF: the LHM storage temperature
+                // sensor is unreliable (it reported 94C for a drive HD
+                // Sentinel reads at 39C), so no drive temps are read at
+                // all rather than a wrong number (Sithu, build 11).
+                IsStorageEnabled = false,
                 IsNetworkEnabled = false,
                 IsBatteryEnabled = false,
                 IsControllerEnabled = false,
                 IsPsuEnabled = false,
             };
             _computer.Open();
-            Logger.Write("LHM: Computer opened (CPU + board + GPU + memory + storage sensors).");
+            Logger.Write("LHM: Computer opened (CPU + board + GPU + memory sensors).");
             return _computer;
         }
         catch (Exception ex)
