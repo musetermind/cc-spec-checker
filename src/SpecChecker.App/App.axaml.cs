@@ -24,7 +24,7 @@ public partial class App : Application
                 "System" => ThemeVariant.Default, // follow the OS
                 _ => ThemeVariant.Dark,
             };
-            Logger.Write($"CC Spec Checker v{AppInfo.Version} initialized. System is ready.");
+            Logger.Write($"{Branding.AppName} v{AppInfo.Version} initialized. System is ready.");
             desktop.MainWindow = new MainWindow();
         }
 

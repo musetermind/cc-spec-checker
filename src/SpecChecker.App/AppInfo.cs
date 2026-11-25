@@ -5,7 +5,9 @@ namespace SpecChecker.App;
 /// ONE place to bump on every release: 0.12, 0.13, 0.14... (Sithu, 0.12
 /// onwards — the old "build N" numbering is retired). The .csproj
 /// &lt;Version&gt; (assembly/file version) is kept in step with this
-/// by hand; it cannot read this const.
+/// by hand; it cannot read this const. The window/header titles in
+/// Branding.cs carry the version by hand too — bump them together
+/// with this.
 /// </summary>
 public static class AppInfo
 {

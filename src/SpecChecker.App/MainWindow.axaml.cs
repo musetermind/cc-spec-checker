@@ -102,12 +102,30 @@ public partial class MainWindow : Window
         {
             // No title-bar icon; continue normally.
         }
-        // The version lives in one place (AppInfo.Version) so the title
-        // can never drift from the release number again.
-        Title = $"CC Spec Checker v{AppInfo.Version} — Computer Corner";
-        // The header title carries the version too (Sithu, 0.14), with
-        // the shop credit under it in the XAML.
-        HeaderTitle.Text = $"CC SPEC CHECKER v{AppInfo.Version}";
+        // The shop branding lives in Branding.cs (one place for the
+        // window title, header title, shop name, contact and links) so a
+        // branded build for another shop is a values swap, not a rewrite.
+        Title = Branding.WindowTitle;
+        HeaderTitle.Text = Branding.HeaderTitle;
+        // The shop name is a Facebook button only when the shop has a
+        // page linked; otherwise it shows as plain text.
+        if (Branding.FacebookUrl != null)
+        {
+            FacebookButtonText.Text = Branding.ShopName;
+            ShopNameText.IsVisible = false;
+        }
+        else
+        {
+            FacebookButton.IsVisible = false;
+            ShopNameText.Text = Branding.ShopName;
+            ShopNameText.IsVisible = true;
+        }
+        CreditSuffix.Text = Branding.CreditSuffix;
+        CreditContact.Text = Branding.ContactLine;
+        // The small centred credit at the very bottom: shown only when
+        // the brand carries one (the CC build has none).
+        CreditLine.Text = Branding.CreditLine;
+        CreditLine.IsVisible = !string.IsNullOrEmpty(Branding.CreditLine);
         // The app runs unelevated by default (choice, not forced admin):
         // the core readings work without elevation. Offer the restart
         // button only when we are NOT already elevated — when already
@@ -194,8 +212,10 @@ public partial class MainWindow : Window
         CreditSuffix.Foreground = _palette.HeadlineFg;
         CreditContact.Foreground = _palette.HeadlineFg;
         FacebookButton.Foreground = _palette.HeadlineFg;
+        ShopNameText.Foreground = _palette.HeadlineFg;
         StatusText.Foreground = _palette.HeadlineFg;
         ReadOnlyNote.Foreground = _palette.HeadlineFg;
+        CreditLine.Foreground = _palette.HeadlineFg;
         foreach (var b in _allButtons) UpdateButtonColors(b);
         ThemeButton.Content = $"Theme: {_themeMode}";
         if (_model != null) ContentArea.Content = BuildSummary(_model);
@@ -295,18 +315,21 @@ public partial class MainWindow : Window
         });
     }
 
-    /// <summary>The shop name in the header credit opens the CC
-    /// Facebook page in the default browser (Sithu, 0.15).</summary>
+    /// <summary>The shop name in the header credit opens the shop's
+    /// Facebook page in the default browser (Sithu, 0.15). No page
+    /// linked means no button, so this never runs for such a brand.</summary>
     private void OnFacebook(object? sender, RoutedEventArgs e)
     {
+        var url = Branding.FacebookUrl;
+        if (url == null) return;
         try
         {
-            Process.Start(new ProcessStartInfo("https://www.facebook.com/ccpcbuilder")
+            Process.Start(new ProcessStartInfo(url)
             {
                 UseShellExecute = true,
             });
-            StatusText.Text = "Opened CC Computer Corner on Facebook.";
-            Logger.Write("Opened https://www.facebook.com/ccpcbuilder.");
+            StatusText.Text = $"Opened {Branding.ShopName} on Facebook.";
+            Logger.Write($"Opened {url}.");
         }
         catch (Exception ex)
         {

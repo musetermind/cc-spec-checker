@@ -4,15 +4,14 @@
         Width="880" Height="840"
         WindowStartupLocation="CenterScreen"
         Background="Black" Foreground="#00FF00" FontFamily="Consolas">
-  <!-- The window title AND the header title (both with the version)
-       are set in code from AppInfo.Version, so there is one version
-       source of truth. -->
+  <!-- The window title AND the header title are set in code from
+       Branding.cs, so there is one branding source of truth. -->
   <!-- Button colours live in code (MainWindow.ApplyTheme), not in XAML
        styles, so the Dark / Light / System theme toggle (0.15) can swap
        every button's palette at runtime. XAML only holds the dark
        starting values; ApplyTheme overrides them before the window shows. -->
 
-  <Grid RowDefinitions="Auto,Auto,*,Auto">
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto">
 
     <!-- Header -->
     <Border x:Name="HeaderBorder" Grid.Row="0" Background="#0A0F0A" Padding="16,10" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
@@ -25,8 +24,11 @@
             <StackPanel Orientation="Horizontal">
               <TextBlock x:Name="CreditPrefix" Text="Presented to you by " FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
               <Button x:Name="FacebookButton" Background="Transparent" BorderThickness="0" Padding="0" Cursor="Hand" Click="OnFacebook" VerticalAlignment="Center">
-                <TextBlock Text="CC Computer Corner" FontSize="11" Opacity="0.7" TextDecorations="Underline"/>
+                <TextBlock x:Name="FacebookButtonText" Text="CC Computer Corner" FontSize="11" Opacity="0.7" TextDecorations="Underline"/>
               </Button>
+              <!-- Plain-text shop name, shown instead of the button when
+                   the brand has no Facebook page linked. -->
+              <TextBlock x:Name="ShopNameText" Text="" FontSize="11" Opacity="0.7" Foreground="#00FF00" VerticalAlignment="Center" IsVisible="False"/>
               <TextBlock x:Name="CreditSuffix" Text=" (Yangon, Myanmar)" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
             </StackPanel>
             <TextBlock x:Name="CreditContact" Text="Contact - ccpcbuilding@gmail.com" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
@@ -71,5 +73,10 @@
                    Foreground="#00FF00" Opacity="0.5" VerticalAlignment="Center"/>
       </DockPanel>
     </Border>
+
+    <!-- Branded-build credit: a small centred line at the very bottom.
+         Empty for the CC build — hidden in code. -->
+    <TextBlock x:Name="CreditLine" Grid.Row="4" Text="" FontSize="10" Opacity="0.6"
+               Foreground="#00FF00" HorizontalAlignment="Center" Margin="0,4,0,6"/>
   </Grid>
 </Window>
