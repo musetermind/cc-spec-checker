@@ -398,7 +398,12 @@ public partial class MainWindow : Window
         if (gpu != null)
         {
             var vram = gpu.VramText ?? "VRAM unknown";
-            var gpuLines = new List<(string Text, IBrush? Brush)> { (gpu.Name, null) };
+            // Board-partner brand next to the model (Sithu, 0.16):
+            // "NVIDIA GeForce RTX 3070 · Zotac". No brand when unknown.
+            var gpuLines = new List<(string Text, IBrush? Brush)>
+            {
+                (gpu.Name + (gpu.Brand != null ? $" · {gpu.Brand}" : ""), null),
+            };
             if (gpu.TempC.HasValue)
             {
                 var temp = $"{gpu.TempC.Value}C"
@@ -420,6 +425,8 @@ public partial class MainWindow : Window
             ? $"{m.Ram.Sticks.Count} stick{(m.Ram.Sticks.Count == 1 ? "" : "s")}"
               + (!string.IsNullOrEmpty(m.Ram.MemoryType) ? $" · {m.Ram.MemoryType}" : "")
               + (speed > 0 ? $" @ {speed}MHz" : "")
+              + (SpecService.NegotiatedCl(m.Ram.Sticks) is string cl ? $" · {cl}" : "")
+              + (!string.IsNullOrEmpty(m.Ram.ChannelMode) ? $" · {m.Ram.ChannelMode}" : "")
             : "No RAM sticks found";
         ramLines.Add((ramSummary, null));
         foreach (var s in m.Ram.Sticks)

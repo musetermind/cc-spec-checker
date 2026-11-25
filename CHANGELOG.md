@@ -4,6 +4,23 @@ All notable changes to CC Spec Checker. Versions follow the build order:
 build 1 is 0.1, build 2 is 0.2, and so on. The version number is shown in
 the window title and the header.
 
+## 0.16 — 2026-11-25
+
+- MEMORY card: the summary line now shows the negotiated CAS latency and
+  the channel mode — "2 sticks · DDR4 @ 3200MHz · CL16 · Dual Channel".
+  The CL is the running value WMI reports per stick, not the kit's rated
+  CL; when the sticks disagree, the loosest one is shown, because the
+  memory controller runs them all at that timing. The channel comes from
+  WMI's interleave depth when the BIOS reports it, otherwise from the
+  stick count.
+- GRAPHICS card: the board-partner brand next to the model — "NVIDIA
+  GeForce RTX 3070 · Zotac". Read from the PCI subsystem vendor ID in
+  the device's PNPDeviceID; unknown vendors show no brand rather than a
+  guess.
+- Fixed: the drive-letter lines (0.15) never appeared — the volume
+  mapping joined on a DeviceID that WMI object paths escape with doubled
+  backslashes, so no drive ever matched its volumes. Unescaped now.
+
 ## 0.15 — 2026-11-25
 
 - Dark / Light / System theme toggle (button under the shop credit, cycles

@@ -45,7 +45,9 @@ public static class SpecService
         foreach (var s in Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
         {
             var name = s["Name"]?.ToString() ?? "?";
-            var pciId = GetPciId(s["PNPDeviceID"]?.ToString());
+            var pnpId = s["PNPDeviceID"]?.ToString();
+            var pciId = GetPciId(pnpId);
+            var brand = GetGpuBrand(pnpId);
             string? vram = null;
             ulong bytes = 0;
             bool found = (pciId != null && dxgiVram.TryGetValue(pciId, out bytes))
@@ -70,24 +72,31 @@ public static class SpecService
                 temp = nv.tempC;
                 hotspot = nv.hotspotC;
             }
-            gpus.Add(new GpuInfo(name, vram, temp, hotspot));
+            gpus.Add(new GpuInfo(name, vram, temp, hotspot, brand));
             gpuIndex++;
         }
 
         var sticks = new List<RamStick>();
         ulong total = 0;
         var memType = "";
-        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer FROM Win32_PhysicalMemory"))
+        uint maxInterleave = 0;
+        // CASLatency and InterleaveDataDepth are UInt16 in WMI — read
+        // them with Convert.ToUInt32, NOT 'is uint' (the same trap as
+        // the MSFT_PhysicalDisk MediaType/BusType bug in build 12).
+        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer, CASLatency, InterleaveDataDepth FROM Win32_PhysicalMemory"))
         {
             var cap = Convert.ToUInt64(s["Capacity"]);
             total += cap;
             uint speed = s["Speed"] is uint sp ? sp : 0;
             var vendor = s["Manufacturer"]?.ToString()?.Trim() ?? "";
-            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor));
+            uint cl = s["CASLatency"] != null ? Convert.ToUInt32(s["CASLatency"]) : 0;
+            uint depth = s["InterleaveDataDepth"] != null ? Convert.ToUInt32(s["InterleaveDataDepth"]) : 0;
+            if (depth > maxInterleave) maxInterleave = depth;
+            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor, cl));
             if (string.IsNullOrEmpty(memType) && s["SMBIOSMemoryType"] is uint mt)
                 memType = MemoryTypeName(mt, speed);
         }
-        var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp());
+        var ram = new RamInfo(sticks, total, memType, SensorService.GetRamTemp(), ChannelModeName(sticks.Count, maxInterleave));
 
         var boardMfr = "";
         var boardProduct = "";
@@ -212,6 +221,105 @@ public static class SpecService
     }
 
     /// <summary>
+    /// The board-partner brand (Zotac, ASUS, MSI...) from the PCI
+    /// subsystem vendor ID in the device's PNPDeviceID
+    /// ("PCI\VEN_10DE&DEV_2484&SUBSYS_148219DA&REV_A1\..."). The SUBSYS
+    /// value is 8 hex digits: the first 4 are the subsystem device, the
+    /// LAST 4 are the subsystem vendor (19DA = Zotac). WMI's
+    /// Win32_VideoController has no brand field, and the chip vendor
+    /// (VEN_10DE = NVIDIA, VEN_1002 = AMD) is the chip maker, not the
+    /// board maker — so this is the only no-driver way to tell a Zotac
+    /// from an ASUS. Unknown vendor, a zero SUBSYS, or a missing
+    /// PNPDeviceID = null: no brand shown rather than a guessed one.
+    /// The map covers the common partners and OEMs; the raw SUBSYS goes
+    /// to the log so an unmapped vendor can be added later.
+    /// </summary>
+    private static string? GetGpuBrand(string? pnpDeviceId)
+    {
+        if (string.IsNullOrEmpty(pnpDeviceId)) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(pnpDeviceId, @"SUBSYS_([0-9A-Fa-f]{8})");
+        if (!m.Success) return null;
+        var subsys = m.Groups[1].Value;
+        var vendor = Convert.ToUInt32(subsys.Substring(4, 4), 16);
+        var brand = vendor switch
+        {
+            0x1002 => "AMD",      // reference board
+            0x1028 => "Dell",
+            0x103C => "HP",
+            0x1043 => "ASUS",
+            0x10B0 => "Gainward",
+            0x10DE => "NVIDIA",  // Founders Edition / reference
+            0x1458 => "Gigabyte",
+            0x1462 => "MSI",
+            0x148C => "PowerColor",
+            0x1569 => "Palit",
+            0x1787 => "XFX",
+            0x17AA => "Lenovo",
+            0x1849 => "ASRock",
+            0x196E => "PNY",
+            0x19DA => "Zotac",
+            0x1DA2 => "Sapphire",
+            0x3842 => "EVGA",
+            0x7377 => "Colorful",
+            _ => null,
+        };
+        Logger.Write($"GPU brand: SUBSYS={subsys}, vendor=0x{vendor:X4} -> {brand ?? "unknown"}.");
+        return brand;
+    }
+
+    /// <summary>
+    /// Memory channel mode: "Dual Channel", "Single Channel", "Quad
+    /// Channel" (null when there are no sticks). WMI's InterleaveDataDepth
+    /// is the real signal when the BIOS reports it (2 = dual, 4 = quad,
+    /// 1 = single). When it reports 0 for every stick — common on
+    /// consumer boards — fall back to the stick count: two or more sticks
+    /// in a machine is dual channel in the standard configuration (the
+    /// bench is a 2-slot board, where two sticks can only be dual). The
+    /// raw depth goes to the log so it is auditable which path fired.
+    /// </summary>
+    private static string? ChannelModeName(int stickCount, uint maxInterleaveDepth)
+    {
+        string? mode;
+        if (maxInterleaveDepth > 0)
+        {
+            mode = maxInterleaveDepth switch
+            {
+                >= 4 => "Quad Channel",
+                >= 2 => "Dual Channel",
+                _ => "Single Channel",
+            };
+        }
+        else
+        {
+            mode = stickCount switch
+            {
+                0 => null,
+                1 => "Single Channel",
+                _ => "Dual Channel",
+            };
+        }
+        Logger.Write($"RAM channel: sticks={stickCount}, max InterleaveDataDepth={maxInterleaveDepth} -> {mode ?? "unknown"}.");
+        return mode;
+    }
+
+    /// <summary>
+    /// The CAS latency to show on the MEMORY summary line: the running
+    /// (negotiated) CL as WMI reports it per stick (CASLatency), not the
+    /// kit's rated CL — the two differ when the board trains looser
+    /// timings than the sticker. When the sticks disagree, the memory
+    /// controller must run them all at the loosest timing, so the
+    /// highest value is the effective one. All zero/unknown = null:
+    /// no CL shown, never a guess.
+    /// </summary>
+    public static string? NegotiatedCl(List<RamStick> sticks)
+    {
+        uint max = 0;
+        foreach (var s in sticks)
+            if (s.CasLatency > max) max = s.CasLatency;
+        return max > 0 ? $"CL{max}" : null;
+    }
+
+    /// <summary>
     /// The real drive type from MSFT_PhysicalDisk: MediaType 4=SSD,
     /// 3=HDD, 5=SCM; BusType 17=NVMe, 11=SATA, 7=USB, 10=SAS, 1=SCSI.
     /// Labels match Task Manager ("SSD (NVMe)", "HDD (SATA)",
@@ -286,6 +394,8 @@ public static class SpecService
             foreach (var list in result.Values)
                 list.Sort((a, b) => string.Compare(a.Letter, b.Letter, StringComparison.OrdinalIgnoreCase));
             Logger.Write($"Volumes: mapped {result.Count} drive(s) to letters.");
+            foreach (var (drive, list) in result)
+                Logger.Write($"Volumes: {drive} -> {string.Join(", ", list.Select(v => v.Letter))}.");
         }
         catch (Exception ex)
         {
@@ -297,12 +407,18 @@ public static class SpecService
     /// <summary>Pull the DeviceID value out of a WMI reference path
     /// (e.g. ...Win32_DiskDrive.DeviceID="\\.\PHYSICALDRIVE0"). The
     /// reference may arrive as a string or a ManagementPath — ToString()
-    /// gives the path either way.</summary>
+    /// gives the path either way. WMI object-path key values escape
+    /// backslashes by doubling them: the drive's DeviceID is
+    /// "\\.\PHYSICALDRIVE0", but the reference path carries it as
+    /// "\\\\.\\PHYSICALDRIVE0". Without unescaping, the join key never
+    /// equals the drive's DeviceID and no volume is ever mapped — the
+    /// 0.15 bug: the volume lines never appeared on the bench even
+    /// though every drive has a letter.</summary>
     private static string? DeviceIdFromPath(string? path)
     {
         if (string.IsNullOrEmpty(path)) return null;
         var m = System.Text.RegularExpressions.Regex.Match(path, @"DeviceID=""([^""]+)""");
-        return m.Success ? m.Groups[1].Value : null;
+        return m.Success ? m.Groups[1].Value.Replace("\\\\", "\\") : null;
     }
 
     /// <summary>
@@ -393,15 +509,24 @@ public static class SpecService
         sb.AppendLine("\nGRAPHICS CARD");
         foreach (var g in m.Gpus)
         {
+            var brand = g.Brand != null ? $" · {g.Brand}" : "";
             var vram = g.VramText != null ? $" - {g.VramText} VRAM" : "";
             var t = g.TempC.HasValue ? $" - {g.TempC.Value}C" : "";
             var hs = g.HotspotTempC.HasValue ? $" (hotspot {g.HotspotTempC.Value}C)" : "";
-            sb.AppendLine($"  {g.Name}{vram}{t}{hs}");
+            sb.AppendLine($"  {g.Name}{brand}{vram}{t}{hs}");
         }
 
         sb.AppendLine("\nMEMORY (RAM)");
         if (!string.IsNullOrEmpty(m.Ram.MemoryType))
             sb.AppendLine($"  Type: {m.Ram.MemoryType}");
+        // Summary line mirrors the card: negotiated CL + channel mode
+        // (Sithu, 0.16).
+        var ramSummary = new List<string>();
+        var cl = NegotiatedCl(m.Ram.Sticks);
+        if (cl != null) ramSummary.Add(cl);
+        if (m.Ram.ChannelMode != null) ramSummary.Add(m.Ram.ChannelMode);
+        if (ramSummary.Count > 0)
+            sb.AppendLine("  " + string.Join(" · ", ramSummary));
         if (m.Ram.TempC.HasValue)
             sb.AppendLine($"  Module temp: {m.Ram.TempC.Value}C");
         foreach (var stick in m.Ram.Sticks)

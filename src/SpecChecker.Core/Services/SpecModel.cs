@@ -30,17 +30,23 @@ public sealed record CpuInfo(
     int? HottestCoreTempC);
 
 /// <summary>Graphics card: name, VRAM as a display string ("8 GB", null when
-/// unknown), GPU temp and hotspot temp in °C (null when unreadable).</summary>
-public sealed record GpuInfo(string Name, string? VramText, int? TempC, int? HotspotTempC);
+/// unknown), GPU temp and hotspot temp in °C (null when unreadable), and
+/// the board-partner brand ("Zotac", "ASUS", null when unknown — read
+/// from the PCI subsystem vendor ID, Sithu 0.16).</summary>
+public sealed record GpuInfo(string Name, string? VramText, int? TempC, int? HotspotTempC, string? Brand);
 
 /// <summary>One RAM stick: the slot label WMI reports, capacity in bytes,
-/// speed in MHz, and the vendor (Manufacturer) when the stick reports one.</summary>
-public sealed record RamStick(string Slot, ulong CapacityBytes, uint SpeedMHz, string Manufacturer);
+/// speed in MHz, the vendor (Manufacturer) when the stick reports one,
+/// and the CAS latency in clocks as WMI reports it — the negotiated
+/// (running) CL, not the kit's rated CL; 0 = unknown (Sithu, 0.16).</summary>
+public sealed record RamStick(string Slot, ulong CapacityBytes, uint SpeedMHz, string Manufacturer, uint CasLatency);
 
 /// <summary>Installed RAM: the sticks, their total, the memory type
-/// ("DDR4"/"DDR5", from SMBIOS), and the module temp in °C (null when no
-/// module reports one — normal for DDR4).</summary>
-public sealed record RamInfo(List<RamStick> Sticks, ulong TotalBytes, string MemoryType, int? TempC);
+/// ("DDR4"/"DDR5", from SMBIOS), the module temp in °C (null when no
+/// module reports one — normal for DDR4), and the channel mode
+/// ("Dual Channel" / "Single Channel" / "Quad Channel", null when it
+/// cannot be determined — Sithu, 0.16).</summary>
+public sealed record RamInfo(List<RamStick> Sticks, ulong TotalBytes, string MemoryType, int? TempC, string? ChannelMode);
 
 /// <summary>Motherboard: manufacturer, product name, BIOS version string,
 /// and the board temp in °C (null when no sensor reports one).</summary>
