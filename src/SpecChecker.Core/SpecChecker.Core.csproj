@@ -5,7 +5,9 @@
     <AssemblyName>SpecChecker.Core</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0</Version>
+    <!-- Assembly/file version. Keep in step with AppInfo.Version in the
+         App project; bump both on every release. -->
+    <Version>0.12.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <!-- LHM 0.9.6 requires System.Management >= 10.0.2 (its net8.0 target).

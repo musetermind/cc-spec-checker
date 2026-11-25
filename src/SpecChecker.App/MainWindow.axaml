@@ -1,10 +1,11 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SpecChecker.App.MainWindow"
-        Title="CC Spec Checker v1.0.0 — Computer Corner"
         Width="1280" Height="800"
         WindowStartupLocation="CenterScreen"
         Background="Black" Foreground="#00FF00" FontFamily="Consolas">
+  <!-- The window title (with the version) is set in code from
+       AppInfo.Version, so there is one version source of truth. -->
   <!-- Styles live in Window.Styles in Avalonia (not Window.Resources,
        which is for resource dictionaries). -->
   <Window.Styles>

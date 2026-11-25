@@ -56,6 +56,9 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        // The version lives in one place (AppInfo.Version) so the title
+        // can never drift from the release number again.
+        Title = $"CC Spec Checker v{AppInfo.Version} — Computer Corner";
         // The app runs unelevated by default (choice, not forced admin):
         // the core readings work without elevation. Offer the restart
         // button only when we are NOT already elevated — when already

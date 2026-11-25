@@ -13,7 +13,7 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            Logger.Write("CC Spec Checker v1.0.0 initialized. System is ready.");
+            Logger.Write($"CC Spec Checker v{AppInfo.Version} initialized. System is ready.");
             desktop.MainWindow = new MainWindow();
         }
 
