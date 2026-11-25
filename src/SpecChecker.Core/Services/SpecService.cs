@@ -43,6 +43,7 @@ public static class SpecService
                       || vramByName.TryGetValue(name, out bytes);
             if (found && bytes > 0)
             {
+                Logger.Write($"VRAM: '{name}' = {bytes} bytes ({bytes / 1024.0 / 1024:0} MiB) -> {FormatVram(bytes)}.");
                 vram = $" - {FormatVram(bytes)} VRAM";
             }
             else
@@ -52,7 +53,7 @@ public static class SpecService
                 if (s["AdapterRAM"] is uint b && b > 0 && b < uint.MaxValue)
                 {
                     // Only trustworthy below 4GB; at uint.MaxValue WMI overflowed.
-                    vram = $" - {b / 1024 / 1024}MB VRAM";
+                    vram = $" - {FormatVram(b)} VRAM";
                 }
             }
             var temp = "";
@@ -164,10 +165,18 @@ public static class SpecService
 
     private static string FormatVram(ulong bytes)
     {
-        const ulong gib = 1024UL * 1024 * 1024;
-        if (bytes >= gib && bytes % gib == 0)
-            return $"{bytes / gib}GB";
-        return $"{bytes / 1024 / 1024}MB";
+        // Display VRAM as whole GB (8 GB, 12 GB). DXGI reports the
+        // *available* dedicated memory, which is slightly under the
+        // card's rated size (e.g. 7.83 GiB for an 8 GB card, because
+        // the driver reserves some), so round to the nearest whole GB
+        // instead of showing the raw MB figure. The exact byte count
+        // still goes to the log for diagnosis.
+        const double gib = 1024.0 * 1024 * 1024;
+        double gb = bytes / gib;
+        double rounded = Math.Round(gb);
+        if (Math.Abs(gb - rounded) <= 0.25)
+            return $"{rounded:0} GB";
+        return $"{gb:0.#} GB";
     }
 
     private static List<ManagementObject> Query(string wql)
