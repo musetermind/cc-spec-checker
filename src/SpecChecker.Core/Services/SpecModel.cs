@@ -47,9 +47,12 @@ public sealed record RamInfo(List<RamStick> Sticks, ulong TotalBytes, string Mem
 public sealed record BoardInfo(string Manufacturer, string Product, string BiosVersion, int? TempC);
 
 /// <summary>One storage drive: model, size as a display string ("465 GB"),
-/// and media type. No drive temp — LHM's storage temperature sensor is
-/// unreliable (it reported 94C for a drive HD Sentinel reads at 39C), so
-/// no temp is shown rather than a wrong number (Sithu, build 11).
+/// and the real drive type ("SSD (NVMe)", "SSD (SATA)", "HDD", "USB flash
+/// drive") from MSFT_PhysicalDisk — WMI's MediaType says "Fixed hard disk
+/// media" for SSDs and HDDs alike, so it is never shown as-is when the
+/// Storage class answers (Sithu, build 12). No drive temp — LHM's storage
+/// temperature sensor is unreliable (it reported 94C for a drive HD
+/// Sentinel reads at 39C), so no temp is shown rather than a wrong number.
 /// No health percentage here — Sithu: SSD health does not matter.</summary>
 public sealed record DriveInfo(string Model, string SizeText, string MediaType);
 

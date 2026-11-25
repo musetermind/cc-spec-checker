@@ -101,17 +101,40 @@ public static class SpecService
             bios = s["SMBIOSBIOSVersion"]?.ToString() ?? "";
         var board = new BoardInfo(boardMfr, boardProduct, bios, boardTemp);
 
+        // Real drive type (SSD vs HDD): WMI's Win32_DiskDrive.MediaType
+        // says "Fixed hard disk media" for EVERY fixed disk — SSD or
+        // spinning, it is the same string, so it cannot tell them apart
+        // (Sithu, build 12). MSFT_PhysicalDisk (root\Microsoft\Windows
+        // \Storage) reports the real MediaType (3=HDD, 4=SSD) and BusType
+        // (17=NVMe, 11=SATA, 7=USB). Match by model name; no match or a
+        // failed query = keep the WMI string, never a guessed type.
+        var physDisks = QueryStorage("SELECT FriendlyName, MediaType, BusType FROM MSFT_PhysicalDisk");
         var drives = new List<DriveInfo>();
         foreach (var s in Query("SELECT Model, Size, MediaType FROM Win32_DiskDrive"))
         {
             var size = s["Size"] != null ? $"{Convert.ToUInt64(s["Size"]) / 1024 / 1024 / 1024} GB" : "?";
             var model = s["Model"]?.ToString() ?? "?";
+            var mediaType = s["MediaType"]?.ToString()?.Trim() ?? "";
+            foreach (var p in physDisks)
+            {
+                var friendly = p["FriendlyName"]?.ToString() ?? "";
+                if (string.IsNullOrEmpty(friendly)) continue;
+                if (model.Contains(friendly, StringComparison.OrdinalIgnoreCase)
+                    || friendly.Contains(model, StringComparison.OrdinalIgnoreCase))
+                {
+                    uint mt = p["MediaType"] is uint m ? m : 0;
+                    uint bt = p["BusType"] is uint b ? b : 0;
+                    mediaType = DriveTypeLabel(mt, bt, mediaType);
+                    Logger.Write($"Drive type: '{model}' MSFT MediaType={mt}, BusType={bt} -> {mediaType}.");
+                    break;
+                }
+            }
             // No drive temp: LHM's storage sensor proved unreliable (94C
             // for a drive HD Sentinel reads at 39C), so none is shown.
             drives.Add(new DriveInfo(
                 model,
                 size,
-                s["MediaType"]?.ToString()?.Trim() ?? ""));
+                mediaType));
         }
 
         var osCaption = "";
@@ -173,6 +196,41 @@ public static class SpecService
         };
         Logger.Write($"RAM type: SMBIOSMemoryType={code}, Speed={speedMHz}MHz -> {label}.");
         return label;
+    }
+
+    /// <summary>
+    /// The real drive type from MSFT_PhysicalDisk: MediaType 4=SSD,
+    /// 3=HDD, 5=SCM; BusType 17=NVMe, 11=SATA, 7=USB. Anything else
+    /// keeps the WMI string (the fallback) so an unknown type is never
+    /// mislabeled. A USB stick with no MediaType is a flash drive.
+    /// </summary>
+    private static string DriveTypeLabel(uint mediaType, uint busType, string fallback) => mediaType switch
+    {
+        4 => busType == 17 ? "SSD (NVMe)" : busType == 11 ? "SSD (SATA)" : "SSD",
+        3 => "HDD",
+        5 => "SCM",
+        _ => busType == 7 ? "USB flash drive" : fallback,
+    };
+
+    /// <summary>
+    /// Query the Storage WMI namespace (MSFT_PhysicalDisk lives there,
+    /// not in root\cimv2). Readable without admin; a failure just means
+    /// the caller falls back to the Win32_DiskDrive strings.
+    /// </summary>
+    private static List<ManagementObject> QueryStorage(string wql)
+    {
+        var list = new List<ManagementObject>();
+        try
+        {
+            var scope = new ManagementScope(@"root\Microsoft\Windows\Storage");
+            using var searcher = new ManagementObjectSearcher(scope, new ObjectQuery(wql));
+            foreach (ManagementObject mo in searcher.Get()) list.Add(mo);
+        }
+        catch (Exception ex)
+        {
+            Logger.Write("Storage WMI query failed: " + ex.Message);
+        }
+        return list;
     }
 
     /// <summary>True when this process is running with administrator rights.</summary>

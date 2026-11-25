@@ -147,9 +147,11 @@ public partial class MainWindow : Window
 
         var cards = new List<Control>();
 
-        // Processor card — cores, threads and cache only (Sithu: the card
-        // is the spec line; the live temps live in the Processor section
-        // below on the same page).
+        // Processor card — cores, threads and cache on the first line,
+        // and the live temp on a second line under it (Sithu: the temp
+        // was missed when the card went specs-only in build 11). The
+        // temp line keeps its colour band; when there is no temp the
+        // line says what to do instead ("restart as admin...").
         var cpuDetail = "";
         if (m.Cpu.Cores > 0)
         {
@@ -158,7 +160,25 @@ public partial class MainWindow : Window
             if (!string.IsNullOrEmpty(cache))
                 cpuDetail += $" · {cache}";
         }
-        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuDetail, () => ScrollToSection("CPU")));
+        string? cpuTempLine;
+        IBrush? cpuTempBrush;
+        if (m.Cpu.PackageTempC.HasValue)
+        {
+            cpuTempLine = $"{m.Cpu.PackageTempC.Value}C package";
+            if (m.Cpu.HottestCoreTempC.HasValue
+                && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
+                cpuTempLine += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
+            cpuTempBrush = TempBrush(m.Cpu.PackageTempC.Value);
+        }
+        else
+        {
+            cpuTempLine = SpecService.IsElevated()
+                ? "temp not available (PawnIO driver not installed)"
+                : "restart as admin to check cpu temp";
+            cpuTempBrush = null;
+        }
+        cards.Add(MakeCard("PROCESSOR", Shorten(m.Cpu.Name), cpuDetail, () => ScrollToSection("CPU"),
+            detail2: cpuTempLine, detail2Brush: cpuTempBrush));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
@@ -221,11 +241,11 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// One dashboard card: a small muted title, a large bright headline,
-    /// and a smaller detail line. Clicking it scrolls to that section.
-    /// The detail line takes the given brush when one is passed (a
-    /// temperature uses its colour band); otherwise the soft green.
+    /// and one or two smaller detail lines. Clicking it scrolls to that
+    /// section. A detail line takes the given brush when one is passed
+    /// (a temperature uses its colour band); otherwise the soft green.
     /// </summary>
-    private Border MakeCard(string title, string headline, string detail, Action onClick, IBrush? detailBrush = null)
+    private Border MakeCard(string title, string headline, string detail, Action onClick, IBrush? detailBrush = null, string? detail2 = null, IBrush? detail2Brush = null)
     {
         var stack = new StackPanel { Spacing = 6 };
         stack.Children.Add(new TextBlock
@@ -249,6 +269,16 @@ public partial class MainWindow : Window
             {
                 Text = detail,
                 Foreground = detailBrush ?? DetailFg,
+                FontSize = 12,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        if (!string.IsNullOrWhiteSpace(detail2))
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = detail2,
+                Foreground = detail2Brush ?? DetailFg,
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -379,7 +409,7 @@ public partial class MainWindow : Window
         foreach (var g in m.Gpus)
         {
             rows.Add(("Model", g.Name, null));
-            rows.Add(("VRAM", g.VramText != null ? $"{g.VramText} (via DXGI)" : "unknown", null));
+            rows.Add(("VRAM", g.VramText ?? "unknown", null));
             if (g.TempC.HasValue)
                 rows.Add(("Temperature", $"{g.TempC.Value}C", TempBrush(g.TempC.Value)));
             else
