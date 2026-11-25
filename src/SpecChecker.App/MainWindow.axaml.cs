@@ -117,6 +117,11 @@ public partial class MainWindow : Window
         // 1.8); the icon's fill follows the button's foreground via
         // binding, so it repaints with the theme like the text does.
         AdminButton.Content = IconButtonContent(Icons.Admin, "Restart as administrator", 14);
+        // Refresh / Copy / Save snapshot sit in the header now (2.1),
+        // next to the admin button — same handlers as the strip had.
+        RefreshButton.Content = IconButtonContent(Icons.Refresh, "Refresh", 12);
+        CopyButton.Content = IconButtonContent(Icons.Copy, "Copy", 12);
+        SaveSnapshotButton.Content = IconButtonContent(Icons.Save, "Save snapshot", 12);
         // Theme first (before the first LoadReport builds the cards, so
         // the dashboard renders in the right palette from the start).
         _themeMode = ThemeSettings.Load();
@@ -131,6 +136,9 @@ public partial class MainWindow : Window
             };
         }
         StyleButton(AdminButton, 13, new Thickness(14, 7));
+        StyleButton(RefreshButton, 11, new Thickness(8, 4));
+        StyleButton(CopyButton, 11, new Thickness(8, 4));
+        StyleButton(SaveSnapshotButton, 11, new Thickness(8, 4));
         StyleButton(ThemeButton, 11, new Thickness(8, 4));
         BuildToolStrip();
         ApplyTheme(_themeMode);
@@ -184,8 +192,7 @@ public partial class MainWindow : Window
         HeaderTitle.Foreground = _palette.HeadlineFg;
         CreditPrefix.Foreground = _palette.HeadlineFg;
         CreditSuffix.Foreground = _palette.HeadlineFg;
-        CreditPhone1.Foreground = _palette.HeadlineFg;
-        CreditPhone2.Foreground = _palette.HeadlineFg;
+        CreditContact.Foreground = _palette.HeadlineFg;
         FacebookButton.Foreground = _palette.HeadlineFg;
         StatusText.Foreground = _palette.HeadlineFg;
         ReadOnlyNote.Foreground = _palette.HeadlineFg;
@@ -310,9 +317,9 @@ public partial class MainWindow : Window
 
     // ----- Quick-launch tool strip (Sithu, 0.15: two rows, six each) -----
 
-    /// <summary>Build the tool strip: Refresh / Copy / Save snapshot plus
-    /// the Windows tools, two rows of six. Built in code (not XAML) so
-    /// the buttons follow the active theme palette.</summary>
+    /// <summary>Build the tool strip: twelve Windows tools, two rows of
+    /// six. Built in code (not XAML) so the buttons follow the active
+    /// theme palette.</summary>
     private void BuildToolStrip()
     {
         var grid = new Grid
@@ -320,18 +327,18 @@ public partial class MainWindow : Window
             ColumnDefinitions = new ColumnDefinitions("*,*,*,*,*,*"),
             RowDefinitions = new RowDefinitions("Auto,Auto"),
         };
-        AddStripButton(grid, "Refresh", "refresh", Icons.Refresh, 0, 0);
-        AddStripButton(grid, "Copy", "copy", Icons.Copy, 1, 0);
-        AddStripButton(grid, "Save snapshot", "save", Icons.Save, 2, 0);
-        AddStripButton(grid, "Device Manager", "devmgmt", Icons.DeviceManager, 3, 0);
-        AddStripButton(grid, "Disk Management", "diskmgmt", Icons.Storage, 4, 0);
-        AddStripButton(grid, "Task Manager", "taskmgr", Icons.TaskManager, 5, 0);
-        AddStripButton(grid, "Settings", "settings", Icons.Settings, 0, 1);
-        AddStripButton(grid, "File Explorer", "explorer", Icons.FileExplorer, 1, 1);
-        AddStripButton(grid, "Recycle Bin", "recyclebin", Icons.RecycleBin, 2, 1);
-        AddStripButton(grid, "Disk Cleanup", "cleanmgr", Icons.DiskCleanup, 3, 1);
-        AddStripButton(grid, "Resource Monitor", "resmon", Icons.ResourceMonitor, 4, 1);
-        AddStripButton(grid, "Reliability Monitor", "perfmon", Icons.ReliabilityMonitor, 5, 1);
+        AddStripButton(grid, "Device Manager", "devmgmt", Icons.DeviceManager, 0, 0);
+        AddStripButton(grid, "Disk Management", "diskmgmt", Icons.Storage, 1, 0);
+        AddStripButton(grid, "Task Manager", "taskmgr", Icons.TaskManager, 2, 0);
+        AddStripButton(grid, "Settings", "settings", Icons.Settings, 3, 0);
+        AddStripButton(grid, "File Explorer", "explorer", Icons.FileExplorer, 4, 0);
+        AddStripButton(grid, "Disk Cleanup", "cleanmgr", Icons.DiskCleanup, 5, 0);
+        AddStripButton(grid, "Resource Monitor", "resmon", Icons.ResourceMonitor, 0, 1);
+        AddStripButton(grid, "Reliability", "perfmon", Icons.ReliabilityMonitor, 1, 1);
+        AddStripButton(grid, "Event Viewer", "eventviewer", Icons.EventViewer, 2, 1);
+        AddStripButton(grid, "Command Prompt", "cmd", Icons.CommandPrompt, 3, 1);
+        AddStripButton(grid, "Programs", "appwiz", Icons.Programs, 4, 1);
+        AddStripButton(grid, "Services", "services", Icons.Services, 5, 1);
         ToolStripArea.Content = grid;
     }
 
@@ -357,18 +364,18 @@ public partial class MainWindow : Window
         if (sender is not Button b || b.Tag is not string tag) return;
         switch (tag)
         {
-            case "refresh": OnRefresh(sender, e); break;
-            case "copy": OnCopy(sender, e); break;
-            case "save": OnSaveSnapshot(sender, e); break;
             case "devmgmt": LaunchTool("Device Manager", "devmgmt.msc", null); break;
             case "diskmgmt": LaunchTool("Disk Management", "diskmgmt.msc", null); break;
             case "taskmgr": LaunchTool("Task Manager", "taskmgr.exe", null); break;
             case "settings": LaunchTool("Settings", "ms-settings:", null); break;
             case "explorer": LaunchTool("File Explorer", "explorer.exe", "shell:MyComputerFolder"); break;
-            case "recyclebin": LaunchTool("Recycle Bin", "explorer.exe", "shell:RecycleBinFolder"); break;
             case "cleanmgr": LaunchTool("Disk Cleanup", "cleanmgr.exe", null); break;
             case "resmon": LaunchTool("Resource Monitor", "resmon.exe", null); break;
             case "perfmon": LaunchTool("Reliability Monitor", "perfmon.exe", "/rel"); break;
+            case "eventviewer": LaunchTool("Event Viewer", "eventvwr.msc", null); break;
+            case "cmd": LaunchTool("Command Prompt", "cmd.exe", null); break;
+            case "appwiz": LaunchTool("Programs and Features", "appwiz.cpl", null); break;
+            case "services": LaunchTool("Services", "services.msc", null); break;
         }
     }
 

@@ -5,6 +5,18 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 0.x series ends here, the app is stable, so the next release moves to
 1.x. The version number is shown in the window title and the header.
 
+## 2.1 — 2026-11-25
+
+- Header shows the contact email instead of the phone numbers:
+  "Contact - ccpcbuilding@gmail.com".
+- Refresh, Copy and Save snapshot move to the header, next to "Restart
+  as administrator" (top-right). The tool strip holds Windows tools only.
+- Tool strip: Event Viewer, Command Prompt, Programs and Features and
+  Services added; Recycle Bin removed. Twelve shortcuts, two rows of six.
+- "Reliability Monitor" button label shortened to "Reliability" — it was
+  clipped at the right edge at 880 wide. "Programs and Features" is shown
+  as "Programs" for the same reason.
+
 ## 2.0 — 2026-11-25
 
 - The CPU-on-motherboard icon is in the app now: the exe icon (Explorer

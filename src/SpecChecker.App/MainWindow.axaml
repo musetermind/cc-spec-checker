@@ -29,26 +29,29 @@
               </Button>
               <TextBlock x:Name="CreditSuffix" Text=" (Yangon, Myanmar)" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
             </StackPanel>
-            <TextBlock x:Name="CreditPhone1" Text="+959777742043" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
-            <TextBlock x:Name="CreditPhone2" Text="+959967174417" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
+            <TextBlock x:Name="CreditContact" Text="Contact - ccpcbuilding@gmail.com" FontSize="11" Opacity="0.7" Foreground="#00FF00"/>
           </StackPanel>
           <!-- Theme toggle (Sithu, 0.15): one button, cycles Dark -> Light -> System. -->
           <Button x:Name="ThemeButton" Content="Theme: Dark" Click="OnThemeClick"
                   HorizontalAlignment="Left" Margin="0,6,0,0" Cursor="Hand"/>
         </StackPanel>
-        <!-- Refresh / Copy / Save snapshot live in the tool strip below
-             (0.15, two rows of six). Only the conditional admin button
-             stays here — it hides when already elevated, so it does not
-             belong in a fixed grid. -->
+        <!-- Refresh / Copy / Save snapshot sit here next to the admin
+             button (2.1, top-right). Only the Windows tools stay in the
+             strip below. The admin button hides when already elevated,
+             so it does not belong in a fixed grid. -->
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+          <Button x:Name="RefreshButton" Click="OnRefresh"/>
+          <Button x:Name="CopyButton" Click="OnCopy"/>
+          <Button x:Name="SaveSnapshotButton" Click="OnSaveSnapshot"/>
           <Button x:Name="AdminButton" Click="OnRestartAsAdmin"/>
         </StackPanel>
       </DockPanel>
     </Border>
 
-    <!-- Quick-launch tool strip (Sithu, 0.15): two rows of six buttons —
-         Refresh / Copy / Save snapshot plus the Windows tools. Built in
-         code (BuildToolStrip) so the buttons follow the active theme. -->
+    <!-- Quick-launch tool strip (Sithu, 0.15): two rows of six Windows
+         tools. Refresh / Copy / Save snapshot moved to the header in
+         2.1. Built in code (BuildToolStrip) so the buttons follow the
+         active theme. -->
     <Border x:Name="ToolStripBorder" Grid.Row="1" Background="#0A0F0A" Padding="16,8" BorderBrush="#1E521E" BorderThickness="0,0,0,1">
       <ContentControl x:Name="ToolStripArea"/>
     </Border>
