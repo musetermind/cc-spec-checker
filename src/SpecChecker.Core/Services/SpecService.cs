@@ -80,19 +80,24 @@ public static class SpecService
         ulong total = 0;
         var memType = "";
         uint maxInterleave = 0;
-        // CASLatency and InterleaveDataDepth are UInt16 in WMI — read
-        // them with Convert.ToUInt32, NOT 'is uint' (the same trap as
-        // the MSFT_PhysicalDisk MediaType/BusType bug in build 12).
-        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer, CASLatency, InterleaveDataDepth FROM Win32_PhysicalMemory"))
+        // 0.16 asked WMI for CASLatency as well — that property does NOT
+        // exist on Win32_PhysicalMemory (Microsoft's class definition
+        // lists 36 properties; CASLatency is not one), so the whole query
+        // failed and the app saw zero sticks ("No RAM sticks found" on a
+        // machine with 64 GB). The running CL lives in the SPD EEPROM on
+        // the stick and is readable only via the SMBus with a driver;
+        // WMI has no such field, so no CL is shown rather than a guessed
+        // one. InterleaveDataDepth IS a real property (uint16 — read it
+        // with Convert.ToUInt32, not 'is uint', the build-12 trap).
+        foreach (var s in Query("SELECT DeviceLocator, Capacity, Speed, SMBIOSMemoryType, Manufacturer, InterleaveDataDepth FROM Win32_PhysicalMemory"))
         {
             var cap = Convert.ToUInt64(s["Capacity"]);
             total += cap;
             uint speed = s["Speed"] is uint sp ? sp : 0;
             var vendor = s["Manufacturer"]?.ToString()?.Trim() ?? "";
-            uint cl = s["CASLatency"] != null ? Convert.ToUInt32(s["CASLatency"]) : 0;
             uint depth = s["InterleaveDataDepth"] != null ? Convert.ToUInt32(s["InterleaveDataDepth"]) : 0;
             if (depth > maxInterleave) maxInterleave = depth;
-            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor, cl));
+            sticks.Add(new RamStick(s["DeviceLocator"]?.ToString() ?? "?", cap, speed, vendor));
             if (string.IsNullOrEmpty(memType) && s["SMBIOSMemoryType"] is uint mt)
                 memType = MemoryTypeName(mt, speed);
         }
@@ -303,23 +308,6 @@ public static class SpecService
     }
 
     /// <summary>
-    /// The CAS latency to show on the MEMORY summary line: the running
-    /// (negotiated) CL as WMI reports it per stick (CASLatency), not the
-    /// kit's rated CL — the two differ when the board trains looser
-    /// timings than the sticker. When the sticks disagree, the memory
-    /// controller must run them all at the loosest timing, so the
-    /// highest value is the effective one. All zero/unknown = null:
-    /// no CL shown, never a guess.
-    /// </summary>
-    public static string? NegotiatedCl(List<RamStick> sticks)
-    {
-        uint max = 0;
-        foreach (var s in sticks)
-            if (s.CasLatency > max) max = s.CasLatency;
-        return max > 0 ? $"CL{max}" : null;
-    }
-
-    /// <summary>
     /// The real drive type from MSFT_PhysicalDisk: MediaType 4=SSD,
     /// 3=HDD, 5=SCM; BusType 17=NVMe, 11=SATA, 7=USB, 10=SAS, 1=SCSI.
     /// Labels match Task Manager ("SSD (NVMe)", "HDD (SATA)",
@@ -519,14 +507,12 @@ public static class SpecService
         sb.AppendLine("\nMEMORY (RAM)");
         if (!string.IsNullOrEmpty(m.Ram.MemoryType))
             sb.AppendLine($"  Type: {m.Ram.MemoryType}");
-        // Summary line mirrors the card: negotiated CL + channel mode
-        // (Sithu, 0.16).
-        var ramSummary = new List<string>();
-        var cl = NegotiatedCl(m.Ram.Sticks);
-        if (cl != null) ramSummary.Add(cl);
-        if (m.Ram.ChannelMode != null) ramSummary.Add(m.Ram.ChannelMode);
-        if (ramSummary.Count > 0)
-            sb.AppendLine("  " + string.Join(" · ", ramSummary));
+        // Summary line mirrors the card: channel mode (Sithu, 0.16).
+        // No CL: there is no WMI field for the running CAS latency (see
+        // the RAM query comment — 0.16 broke on a property that does not
+        // exist), so none is shown rather than a guessed one.
+        if (m.Ram.ChannelMode != null)
+            sb.AppendLine($"  {m.Ram.ChannelMode}");
         if (m.Ram.TempC.HasValue)
             sb.AppendLine($"  Module temp: {m.Ram.TempC.Value}C");
         foreach (var stick in m.Ram.Sticks)

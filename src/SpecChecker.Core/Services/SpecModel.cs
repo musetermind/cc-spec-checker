@@ -36,10 +36,8 @@ public sealed record CpuInfo(
 public sealed record GpuInfo(string Name, string? VramText, int? TempC, int? HotspotTempC, string? Brand);
 
 /// <summary>One RAM stick: the slot label WMI reports, capacity in bytes,
-/// speed in MHz, the vendor (Manufacturer) when the stick reports one,
-/// and the CAS latency in clocks as WMI reports it — the negotiated
-/// (running) CL, not the kit's rated CL; 0 = unknown (Sithu, 0.16).</summary>
-public sealed record RamStick(string Slot, ulong CapacityBytes, uint SpeedMHz, string Manufacturer, uint CasLatency);
+/// speed in MHz, and the vendor (Manufacturer) when the stick reports one.</summary>
+public sealed record RamStick(string Slot, ulong CapacityBytes, uint SpeedMHz, string Manufacturer);
 
 /// <summary>Installed RAM: the sticks, their total, the memory type
 /// ("DDR4"/"DDR5", from SMBIOS), the module temp in °C (null when no

@@ -4,6 +4,19 @@ All notable changes to CC Spec Checker. Versions follow the build order:
 build 1 is 0.1, build 2 is 0.2, and so on. The version number is shown in
 the window title and the header.
 
+## 0.17 — 2026-11-25
+
+- Fixed: RAM detection was broken in 0.16 — the MEMORY card showed "0 GB /
+  No RAM sticks found" on a machine with 64 GB installed. The 0.16 query
+  asked WMI for CASLatency, which is not a Win32_PhysicalMemory property
+  (Microsoft's class definition lists 36 properties; CASLatency is not
+  one), so the whole query failed and the app saw zero sticks. The query
+  no longer asks for it.
+- The CL is gone from the MEMORY line: there is no WMI field for the
+  running CAS latency — it lives in the SPD chip on the stick and is
+  readable only via the SMBus with a driver. No CL is shown rather than
+  a guessed one. The channel mode stays ("Dual Channel").
+
 ## 0.16 — 2026-11-25
 
 - MEMORY card: the summary line now shows the negotiated CAS latency and

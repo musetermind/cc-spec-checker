@@ -425,7 +425,6 @@ public partial class MainWindow : Window
             ? $"{m.Ram.Sticks.Count} stick{(m.Ram.Sticks.Count == 1 ? "" : "s")}"
               + (!string.IsNullOrEmpty(m.Ram.MemoryType) ? $" · {m.Ram.MemoryType}" : "")
               + (speed > 0 ? $" @ {speed}MHz" : "")
-              + (SpecService.NegotiatedCl(m.Ram.Sticks) is string cl ? $" · {cl}" : "")
               + (!string.IsNullOrEmpty(m.Ram.ChannelMode) ? $" · {m.Ram.ChannelMode}" : "")
             : "No RAM sticks found";
         ramLines.Add((ramSummary, null));
