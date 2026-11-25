@@ -191,33 +191,36 @@ public static class SpecService
     }
 
     /// <summary>
-    /// SMBIOS memory type code to the DDR generation label. The WMI codes
-    /// are 20=DDR, 21=DDR2, 22=DDR2 FB-DIMM, 23=DDR3, 24=FBD2, 25=DDR4,
-    /// 33=DDR5. The LPDDR codes (26-29) are soldered memory that never
-    /// appears as a removable DIMM, so a DIMM reporting one is a BIOS
-    /// quirk — observed on the PRIME B660M-K D4, which reports 26 for
-    /// DDR4 DIMMs (build 10 showed them as "DDR5" because 26 was
-    /// wrongly mapped to DDR5). For those codes the speed decides:
-    /// DDR5 starts at 4800 MT/s, DDR4 runs below that. The raw code and
-    /// speed go to the log so the mapping is auditable.
+    /// SMBIOS memory type code to the DDR generation label. The codes are
+    /// the raw SMBIOS Memory Device Type values (Win32_PhysicalMemory
+    /// SMBIOSMemoryType): 18=DDR, 19=DDR2, 20=DDR2 FB-DIMM, 24=DDR3,
+    /// 25=FBD2, 26=DDR4, 27=LPDDR, 28=LPDDR2, 29=LPDDR3, 30=LPDDR4,
+    /// 31=Logical non-volatile device, 32=HBM, 33=HBM2, 34=DDR5,
+    /// 35=LPDDR5. An earlier version labelled these with the older WMI
+    /// MemoryType numbering, which put DDR5 at 33 and LPDDR5 at 34 — so
+    /// every DDR5 machine read as LPDDR5, and DDR3 read as FBD2. The raw
+    /// code and speed go to the log so the mapping is auditable.
     /// </summary>
     private static string MemoryTypeName(uint code, uint speedMHz)
     {
         var label = code switch
         {
-            20 => "DDR",
-            21 => "DDR2",
-            22 => "DDR2 FB-DIMM",
-            23 => "DDR3",
-            24 => "FBD2",
-            25 => "DDR4",
-            30 => "Logical non-volatile device",
-            31 => "HBM",
-            32 => "HBM2",
-            33 => "DDR5",
-            34 => "LPDDR5",
-            26 or 27 or 28 or 29 => speedMHz >= 4800 ? "DDR5" : "DDR4",
-            _ => $"DDR (type {code})",
+            18 => "DDR",
+            19 => "DDR2",
+            20 => "DDR2 FB-DIMM",
+            24 => "DDR3",
+            25 => "FBD2",
+            26 => "DDR4",
+            27 => "LPDDR",
+            28 => "LPDDR2",
+            29 => "LPDDR3",
+            30 => "LPDDR4",
+            31 => "Logical non-volatile device",
+            32 => "HBM",
+            33 => "HBM2",
+            34 => "DDR5",
+            35 => "LPDDR5",
+            _ => $"Unknown (type {code})",
         };
         Logger.Write($"RAM type: SMBIOSMemoryType={code}, Speed={speedMHz}MHz -> {label}.");
         return label;
