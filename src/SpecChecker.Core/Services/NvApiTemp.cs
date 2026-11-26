@@ -14,6 +14,9 @@ namespace SpecChecker.Core.Services;
 ///   NvAPI_EnumPhysicalGPUs      0xE5AC921F
 ///   NvAPI_GPU_GetThermalSettings 0xE3640A56
 ///   NvAPI_GPU_GetMemoryInfoEx   0x774AA982
+///   NvAPI_GPU_GetPCIIdentifiers 0x2DDFB66E (verified against the
+///   interface-ID table published with 3Dmigoto, which uses the same
+///   QueryInterface pattern; the official nvapi.h does not list the IDs)
 ///   NvAPI_Unload                0xD22BDD7E
 /// </summary>
 internal static class NvApiTemp
@@ -45,6 +48,9 @@ internal static class NvApiTemp
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate uint GetMemoryInfoExFn(IntPtr gpuHandle, ref GpuMemoryInfoEx info);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate uint GetPciIdsFn(IntPtr gpuHandle, out uint deviceId, out uint subSystemId, out uint revisionId, out uint extDeviceId);
 
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate uint UnloadFn();
@@ -90,15 +96,18 @@ internal static class NvApiTemp
         (uint)(Marshal.SizeOf<GpuMemoryInfoEx>() | (2 << 16));
 
     /// <summary>GPU temperature in °C per physical GPU handle index, plus the
-    /// dedicated VRAM (KB) as a cross-check against the DXGI figure.
+    /// dedicated VRAM (KB) as a cross-check against the DXGI figure, and
+    /// the PCI key ("10DE&2484&261719DA") that identifies the exact card
+    /// — vendor, device and subsystem — so a temperature can be matched
+    /// to its WMI controller without trusting any ordering or any size.
     /// Returns an empty map when NVAPI is unavailable (no NVIDIA GPU/driver).
     /// The thermal sensors are ordered GPU (0), memory (1), hotspot (2) on
     /// modern NVIDIA cards — the same layout tools like HWiNFO read. The
     /// hotspot is only reported when a third sensor exists (Count >= 3);
     /// all three raw values go to the log so the mapping is verifiable.</summary>
-    public static Dictionary<int, (int tempC, int? hotspotC, ulong vramBytes)> GetGpuTemps()
+    public static Dictionary<int, (int tempC, int? hotspotC, ulong vramBytes, string? pciKey)> GetGpuTemps()
     {
-        var result = new Dictionary<int, (int, int?, ulong)>();
+        var result = new Dictionary<int, (int, int?, ulong, string?)>();
         var hModule = LoadLibrary("nvapi64.dll");
         if (hModule == IntPtr.Zero)
         {
@@ -119,6 +128,7 @@ internal static class NvApiTemp
             var enumGpus = GetFn<EnumPhysicalGPUsFn>(query, 0xE5AC921F);
             var getThermal = GetFn<GetThermalSettingsFn>(query, 0xE3640A56);
             var getMem = GetFn<GetMemoryInfoExFn>(query, 0x774AA982);
+            var getPciIds = GetFn<GetPciIdsFn>(query, 0x2DDFB66E);
             var unload = GetFn<UnloadFn>(query, 0xD22BDD7E);
             if (init == null || enumGpus == null || getThermal == null)
             {
@@ -163,8 +173,15 @@ internal static class NvApiTemp
                         if (getMem(handles[i], ref mem) == NVAPI_OK)
                             vram = (ulong)mem.DedicatedVideoMemory * 1024;
                     }
-                    Logger.Write($"NVAPI: GPU {i}: temp={temp}C, hotspot={hotspot?.ToString() ?? "?"}C, VRAM={vram} bytes (cross-check).");
-                    result[i] = (temp, hotspot, vram);
+                    // The PCI key identifies the exact card. NVAPI handles
+                    // are NVIDIA by definition, so the vendor is always
+                    // 10DE; the device and subsystem come from the card.
+                    string? pciKey = null;
+                    if (getPciIds != null
+                        && getPciIds(handles[i], out var devId, out var subId, out _, out _) == NVAPI_OK)
+                        pciKey = $"10DE&{devId:X4}&{subId:X8}";
+                    Logger.Write($"NVAPI: GPU {i}: temp={temp}C, hotspot={hotspot?.ToString() ?? "?"}C, VRAM={vram} bytes (cross-check), PCI={pciKey ?? "?"}");
+                    result[i] = (temp, hotspot, vram, pciKey);
                 }
             }
             finally

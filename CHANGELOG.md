@@ -5,6 +5,35 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 0.x series ends here, the app is stable, so the next release moves to
 1.x. The version number is shown in the window title and the header.
 
+## 2.4 — 2026-11-26
+
+- AMD Ryzen temperature now reads: LibreHardwareMonitor reports the
+  Ryzen temp as "Core (Tctl/Tdie)" with no "Package" sensor, so the
+  card used to say "not available" even with the driver installed.
+  That reading now stands in for the package temp.
+- The Graphics card lists every GPU, discrete first: on laptops and
+  Ryzen desktops with integrated graphics the integrated GPU used to
+  be the only one shown. The discrete card now leads, and the
+  integrated one gets its own line.
+- A thin line separates the GPU entries on multi-GPU machines, so the
+  second card never reads like it belongs to the first. Single-GPU
+  machines look exactly as before.
+- Integrated graphics memory is labelled honestly: "128 MB Dedicated
+  + 8 GB Shared" instead of a bare "0 GB".
+- Integrated graphics shows no board-partner brand: the name already
+  says Intel or AMD, and the subsystem vendor would only name the
+  board maker. Discrete cards still show theirs.
+- GPU temperature is matched to its exact card by PCI key (vendor,
+  device and subsystem), with NVIDIA order as the fallback: WMI lists
+  the integrated GPU first, so a plain adapter index would land the
+  temperature on the wrong card. (VRAM size was tried as the key
+  first — NVAPI's memory query returns 0, and DXGI reports less than
+  the full VRAM, so it can never match exactly.)
+- CPU temperature always shows both numbers: the package temp and the
+  hottest core, even when they are equal. The hottest core used to be
+  hidden when it matched the package temp, which looked like the
+  reading was missing.
+
 ## 2.3 — 2026-11-26
 
 - The PawnIO driver (v2.2.0, signed, by namazso) is bundled now, so

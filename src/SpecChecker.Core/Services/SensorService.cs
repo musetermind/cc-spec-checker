@@ -15,7 +15,12 @@ internal static class SensorService
     private static bool _openFailed;
 
     /// <summary>CPU package temp, hottest core temp, and board temp in °C
-    /// (null when a value is not available). Safe to call repeatedly; the
+    /// (null when a value is not available). On AMD Ryzen there is no
+    /// "Package" sensor — LibreHardwareMonitor reports "Core (Tctl/Tdie)"
+    /// instead (already the corrected Tdie value, so the old Ryzen X
+    /// +20C offset does not apply) — and that reading stands in for the
+    /// package temp, so the card does not say "not available" on a Ryzen
+    /// machine with the driver installed. Safe to call repeatedly; the
     /// Computer is opened once and reused.</summary>
     public static (int? cpuPackage, int? hottestCore, int? board) GetCpuTemps()
     {
@@ -24,7 +29,7 @@ internal static class SensorService
         try
         {
             computer.Accept(new UpdateVisitor());
-            int? package = null, hottest = null, board = null;
+            int? package = null, hottest = null, board = null, tctl = null;
             foreach (var hw in computer.Hardware)
             {
                 if (hw.HardwareType is not (HardwareType.Cpu or HardwareType.Motherboard))
@@ -40,7 +45,17 @@ internal static class SensorService
                         if (name.Contains("Package", StringComparison.OrdinalIgnoreCase))
                             package ??= v;
                         else if (name.StartsWith("Core", StringComparison.OrdinalIgnoreCase))
+                        {
                             hottest = hottest == null ? v : Math.Max(hottest.Value, v);
+                            if (name.Contains("Tctl", StringComparison.OrdinalIgnoreCase)
+                                || name.Contains("Tdie", StringComparison.OrdinalIgnoreCase))
+                                tctl ??= v;
+                        }
+                        else if (name.Contains("Tdie", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Per-CCD die temps ("CCD1 (Tdie)") — same fallback.
+                            tctl ??= v;
+                        }
                     }
                     else if (hw.HardwareType == HardwareType.Motherboard)
                     {
@@ -48,7 +63,7 @@ internal static class SensorService
                     }
                 }
             }
-            return (package, hottest, board);
+            return (package ?? tctl, hottest, board);
         }
         catch (Exception ex)
         {

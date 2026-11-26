@@ -11,5 +11,5 @@ namespace SpecChecker.App;
 /// </summary>
 public static class AppInfo
 {
-    public const string Version = "2.3";
+    public const string Version = "2.4";
 }

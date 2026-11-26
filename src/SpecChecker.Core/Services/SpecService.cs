@@ -45,41 +45,107 @@ public static class SpecService
         // ADL until the crash cause is found AND the code is proven on
         // real AMD hardware. AMD cards show no temp rather than crashing.
         var nvTemps = NvApiTemp.GetGpuTemps();
+        // NVAPI temperatures are matched to cards by PCI key first
+        // (vendor, device and subsystem — the exact card, no ordering
+        // and no size involved), and by NVIDIA order as the fallback:
+        // WMI lists the integrated GPU first on laptops, so a WMI index
+        // is not an NVAPI index — but the i-th NVIDIA controller in WMI
+        // order is the i-th NVAPI GPU. VRAM size was tried as the key
+        // first and dropped: NVAPI's memory query returns 0 on this
+        // hardware, and even when it works DXGI reports less than the
+        // full VRAM (the driver holds back ~174 MiB on an 8 GB card),
+        // so exact VRAM matching can never be trusted. Two identical
+        // cards share one PCI key, so each key holds a queue and every
+        // controller takes the next temperature from it.
+        var nvByPci = new Dictionary<string, Queue<(int tempC, int? hotspotC)>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var nv in nvTemps.Values)
+            if (nv.tempC >= 0 && nv.pciKey != null)
+            {
+                if (!nvByPci.TryGetValue(nv.pciKey, out var q))
+                    nvByPci[nv.pciKey] = q = new Queue<(int, int?)>();
+                q.Enqueue((nv.tempC, nv.hotspotC));
+            }
         var gpus = new List<GpuInfo>();
-        var gpuIndex = 0;
-        foreach (var s in Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController"))
+        var gpuVramBytes = new List<ulong>(); // parallel to gpus, for sorting
+        var controllers = Query("SELECT Name, AdapterRAM, PNPDeviceID FROM Win32_VideoController");
+        var nvidiaOrdinal = 0; // NVIDIA controllers seen so far, in WMI order
+        foreach (var s in controllers)
         {
             var name = s["Name"]?.ToString() ?? "?";
             var pnpId = s["PNPDeviceID"]?.ToString();
             var pciId = GetPciId(pnpId);
             var brand = GetGpuBrand(pnpId);
             string? vram = null;
-            ulong bytes = 0;
-            bool found = (pciId != null && dxgiVram.TryGetValue(pciId, out bytes))
-                      || (pciId != null && vramByPci.TryGetValue(pciId, out bytes))
-                      || vramByName.TryGetValue(name, out bytes);
-            if (found && bytes > 0)
+            ulong bytes = 0, sharedBytes = 0;
+            if (pciId != null && dxgiVram.TryGetValue(pciId, out var dx))
             {
-                Logger.Write($"VRAM: '{name}' = {bytes} bytes ({bytes / 1024.0 / 1024:0} MiB) -> {FormatVram(bytes)}.");
-                vram = FormatVram(bytes);
+                bytes = dx.dedicated;
+                sharedBytes = dx.shared;
+            }
+            else if (pciId != null && vramByPci.TryGetValue(pciId, out bytes))
+            {
+                // Registry fallback: no shared-memory figure.
+            }
+            else if (!vramByName.TryGetValue(name, out bytes))
+            {
+                bytes = 0;
+            }
+            if (bytes > 0)
+            {
+                Logger.Write($"VRAM: '{name}' = {bytes} bytes ({bytes / 1024.0 / 1024:0} MiB) -> {FormatVram(bytes)}"
+                    + (sharedBytes > 0 ? $" + {sharedBytes / 1024.0 / 1024:0} MiB shared." : "."));
+                // Integrated GPU: tiny dedicated memory, large shared pool —
+                // label both, so a laptop never reads "0 GB" or a bare "128 MB".
+                vram = bytes <= 512UL * 1024 * 1024 && sharedBytes > 0
+                    ? $"{FormatVram(bytes)} Dedicated + {FormatVram(sharedBytes)} Shared"
+                    : FormatVram(bytes);
             }
             else
             {
                 Logger.Write($"VRAM: no DXGI/registry entry for '{name}' (PCI {pciId ?? "?"}); " +
                              $"DXGI saw {dxgiVram.Count} adapter(s), registry had {vramByPci.Count + vramByName.Count} key(s).");
                 if (s["AdapterRAM"] is uint b && b > 0 && b < uint.MaxValue)
+                {
+                    bytes = b;
                     vram = FormatVram(b);
+                }
             }
+            // Integrated graphics has no board partner: the subsystem
+            // vendor would only name the board maker (ASUS on the bench),
+            // which reads wrong next to a name that already says Intel
+            // or AMD. Same test as the shared-memory label — tiny
+            // dedicated memory plus a shared pool.
+            if (bytes > 0 && bytes <= 512UL * 1024 * 1024 && sharedBytes > 0)
+                brand = null;
             int? temp = null;
             int? hotspot = null;
-            if (nvTemps.TryGetValue(gpuIndex, out var nv) && nv.tempC >= 0)
+            var isNvidia = pnpId != null && pnpId.Contains("VEN_10DE", StringComparison.OrdinalIgnoreCase);
+            var pciKey = GetPciKey(pnpId);
+            if (pciKey != null && nvByPci.TryGetValue(pciKey, out var q) && q.Count > 0)
+            {
+                var t = q.Dequeue();
+                temp = t.tempC;
+                hotspot = t.hotspotC;
+            }
+            else if (isNvidia && nvTemps.TryGetValue(nvidiaOrdinal, out var nv) && nv.tempC >= 0)
             {
                 temp = nv.tempC;
                 hotspot = nv.hotspotC;
             }
+            else if (controllers.Count == 1 && nvTemps.TryGetValue(0, out var nv0) && nv0.tempC >= 0)
+            {
+                // Single-GPU machine: the indices agree, as before.
+                temp = nv0.tempC;
+                hotspot = nv0.hotspotC;
+            }
+            if (isNvidia) nvidiaOrdinal++;
             gpus.Add(new GpuInfo(name, vram, temp, hotspot, brand));
-            gpuIndex++;
+            gpuVramBytes.Add(bytes);
         }
+        // Discrete card first: WMI lists the integrated GPU first on
+        // laptops and Ryzen desktops with an iGPU, so sort by VRAM
+        // descending (stable — equal sizes keep WMI order).
+        gpus = gpus.Zip(gpuVramBytes, (g, b) => (g, b)).OrderByDescending(x => x.b).Select(x => x.g).ToList();
 
         var sticks = new List<RamStick>();
         ulong total = 0;
@@ -477,8 +543,7 @@ public static class SpecService
                  : IsElevated() ? "  Package temp: not available"
                  : "  Package temp: Restart as Admin to check CPU temperature";
         sb.AppendLine(temp);
-        if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue
-            && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
+        if (m.Cpu.HottestCoreTempC.HasValue)
             sb.AppendLine($"  Hottest core: {m.Cpu.HottestCoreTempC.Value}C");
 
         sb.AppendLine("\nGRAPHICS CARD");
@@ -585,6 +650,21 @@ public static class SpecService
             : null;
     }
 
+    /// <summary>
+    /// The full PCI key for a device ("10DE&2484&261719DA"): vendor,
+    /// device and subsystem from the PNPDeviceID. Matches the key
+    /// NvApiTemp builds from NvAPI_GPU_GetPCIIdentifiers, so a
+    /// temperature lands on its exact card. Missing SUBSYS = null.
+    /// </summary>
+    private static string? GetPciKey(string? deviceId)
+    {
+        if (string.IsNullOrEmpty(deviceId)) return null;
+        var pci = GetPciId(deviceId);
+        if (pci == null) return null;
+        var m = System.Text.RegularExpressions.Regex.Match(deviceId, @"SUBSYS_([0-9A-Fa-f]{8})");
+        return m.Success ? pci + "&" + m.Groups[1].Value.ToUpperInvariant() : null;
+    }
+
     /// <summary>Bytes as "465 GB", or "5.5 TB" once past 1024 GB
     /// (one decimal — a 5589 GB volume reads better as "5.5 TB").
     /// Used for the per-volume used/free figures (0.15).</summary>
@@ -603,6 +683,10 @@ public static class SpecService
         // the driver reserves some), so round to the nearest whole GB
         // instead of showing the raw MB figure. The exact byte count
         // still goes to the log for diagnosis.
+        // Below 1 GB, show MB: an integrated GPU's 128 MB would
+        // otherwise round to "0 GB".
+        if (bytes < 1024UL * 1024 * 1024)
+            return $"{bytes / 1024.0 / 1024:0} MB";
         const double gib = 1024.0 * 1024 * 1024;
         double gb = bytes / gib;
         double rounded = Math.Round(gb);

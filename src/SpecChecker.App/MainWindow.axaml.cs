@@ -487,8 +487,7 @@ public partial class MainWindow : Window
         if (m.Cpu.PackageTempC.HasValue)
         {
             var temp = $"{m.Cpu.PackageTempC.Value}C package";
-            if (m.Cpu.HottestCoreTempC.HasValue
-                && m.Cpu.HottestCoreTempC.Value != m.Cpu.PackageTempC.Value)
+            if (m.Cpu.HottestCoreTempC.HasValue)
                 temp += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
             cpuLines.Add((temp, TempBrush(m.Cpu.PackageTempC.Value)));
         }
@@ -532,7 +531,23 @@ public partial class MainWindow : Window
                     + (gpu.HotspotTempC.HasValue ? $" · hotspot {gpu.HotspotTempC.Value}C" : "");
                 gpuLines.Add((temp, TempBrush(gpu.TempC.Value)));
             }
-            cards.Add(MakeCard(Icons.Graphics, "GRAPHICS CARD", vram + " VRAM", gpuLines));
+            // More than one GPU (laptop, Ryzen with an iGPU): one compact
+            // line each, with its own memory figure, so the second card is
+            // visible instead of silently dropped — with a thin line above
+            // it, so it never reads like it belongs to the first card.
+            // The first card keeps exactly the layout it had, and a
+            // single-GPU machine gets no divider at all.
+            var dividerBefore = new List<int>();
+            foreach (var extra in m.Gpus.Skip(1))
+            {
+                dividerBefore.Add(gpuLines.Count);
+                var line = extra.Name + (extra.Brand != null ? $" · {extra.Brand}" : "")
+                    + (extra.VramText != null ? $" · {extra.VramText} VRAM" : "");
+                if (extra.TempC.HasValue)
+                    line += $" · {extra.TempC.Value}C";
+                gpuLines.Add((line, null));
+            }
+            cards.Add(MakeCard(Icons.Graphics, "GRAPHICS CARD", vram + " VRAM", gpuLines, dividerBefore: dividerBefore));
         }
         else
         {
@@ -607,10 +622,13 @@ public partial class MainWindow : Window
     /// bright headline, and a few short detail lines — one fact per line,
     /// so a glance is enough (Sithu, 0.13). A line takes the given brush
     /// when one is passed (a temperature uses its colour band); otherwise
-    /// the soft green. Cards are display only: no clicks, no sections to
-    /// go to. The icon is a vector path in the title colour (Sithu, 1.8).
+    /// the soft green. dividerBefore lists the line indices that get a
+    /// thin separator above them — the Graphics card uses it between
+    /// GPUs, so a single-GPU card never sees one. Cards are display only:
+    /// no clicks, no sections to go to. The icon is a vector path in the
+    /// title colour (Sithu, 1.8).
     /// </summary>
-    private Border MakeCard(Geometry? icon, string title, string headline, List<(string Text, IBrush? Brush)> lines, Control? action = null)
+    private Border MakeCard(Geometry? icon, string title, string headline, List<(string Text, IBrush? Brush)> lines, Control? action = null, IReadOnlyCollection<int>? dividerBefore = null)
     {
         var stack = new StackPanel { Spacing = 6 };
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -632,9 +650,19 @@ public partial class MainWindow : Window
             FontWeight = FontWeight.Bold,
             TextWrapping = TextWrapping.Wrap,
         });
-        foreach (var (text, brush) in lines)
+        for (var i = 0; i < lines.Count; i++)
         {
+            var (text, brush) = lines[i];
             if (string.IsNullOrWhiteSpace(text)) continue;
+            // A thin line above this entry — only used between GPUs, so
+            // a second card never reads like it belongs to the first.
+            if (dividerBefore != null && dividerBefore.Contains(i))
+                stack.Children.Add(new Separator
+                {
+                    Background = _palette.Border,
+                    Height = 1,
+                    Margin = new Thickness(0, 2, 0, 2),
+                });
             stack.Children.Add(new TextBlock
             {
                 Text = text,

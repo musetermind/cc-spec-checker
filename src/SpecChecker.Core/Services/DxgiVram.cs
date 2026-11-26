@@ -16,8 +16,12 @@ namespace SpecChecker.Core.Services;
 ///   IDXGIFactory1::EnumAdapters1 = slot 12 (3 IUnknown + 4 IDXGIObject + 5 IDXGIFactory)
 ///   IDXGIAdapter1::GetDesc1      = slot 10 (3 IUnknown + 4 IDXGIObject + 3 IDXGIAdapter)
 ///
-/// Returns VRAM bytes keyed by "VVVV&DDDD" PCI VEN/DEV id, matching the
-/// format produced by SpecService.GetPciId from WMI PNPDeviceID.
+/// Returns dedicated VRAM bytes plus shared system memory bytes, keyed
+/// by "VVVV&DDDD" PCI VEN/DEV id, matching the format produced by
+/// SpecService.GetPciId from WMI PNPDeviceID. The shared figure matters
+/// for integrated GPUs: DXGI reports a tiny dedicated memory (often
+/// 128 MB) and the real usable graphics memory as shared system memory,
+/// so the shared number is what keeps the label honest.
 /// </summary>
 internal static class DxgiVram
 {
@@ -64,9 +68,9 @@ internal static class DxgiVram
         return Marshal.GetDelegateForFunctionPointer<T>(fnPtr);
     }
 
-    public static Dictionary<string, ulong> GetVramByPciId()
+    public static Dictionary<string, (ulong dedicated, ulong shared)> GetVramByPciId()
     {
-        var map = new Dictionary<string, ulong>(StringComparer.OrdinalIgnoreCase);
+        var map = new Dictionary<string, (ulong, ulong)>(StringComparer.OrdinalIgnoreCase);
         IntPtr factory = IntPtr.Zero;
         try
         {
@@ -105,10 +109,11 @@ internal static class DxgiVram
                         continue;
                     }
                     ulong vram = desc.DedicatedVideoMemory.ToUInt64();
+                    ulong shared = desc.SharedSystemMemory.ToUInt64();
                     Logger.Write($"DXGI: adapter {i}: '{desc.Description}' " +
-                                 $"PCI {desc.VendorId:X4}&{desc.DeviceId:X4} VRAM={vram} bytes.");
+                                 $"PCI {desc.VendorId:X4}&{desc.DeviceId:X4} VRAM={vram} bytes, Shared={shared} bytes.");
                     if (vram > 0)
-                        map[$"{desc.VendorId:X4}&{desc.DeviceId:X4}"] = vram;
+                        map[$"{desc.VendorId:X4}&{desc.DeviceId:X4}"] = (vram, shared);
                 }
                 finally
                 {
