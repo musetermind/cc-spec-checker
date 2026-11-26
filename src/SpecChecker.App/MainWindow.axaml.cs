@@ -475,6 +475,7 @@ public partial class MainWindow : Window
         // when there is no temp the line says what to do instead
         // ("Restart as Admin to check CPU temperature").
         var cpuLines = new List<(string Text, IBrush? Brush)>();
+        Control? installAction = null;
         if (m.Cpu.Cores > 0)
         {
             var specs = $"{m.Cpu.Cores} cores · {m.Cpu.Threads} threads";
@@ -491,13 +492,28 @@ public partial class MainWindow : Window
                 temp += $" · hottest core {m.Cpu.HottestCoreTempC.Value}C";
             cpuLines.Add((temp, TempBrush(m.Cpu.PackageTempC.Value)));
         }
+        else if (!PawnIoDriver.IsInstalled)
+        {
+            // The driver is the blocker, at either elevation: offer the
+            // install right here instead of a dead-end message.
+            cpuLines.Add(("temp not available — the PawnIO driver is not installed", null));
+            var installButton = new Button { Content = "Install PawnIO driver" };
+            StyleButton(installButton, 11, new Thickness(8, 4));
+            installButton.Click += OnInstallPawnIo;
+            installAction = installButton;
+        }
+        else if (!SpecService.IsElevated())
+        {
+            // The driver is there; elevation is the blocker now.
+            cpuLines.Add(("Restart as Admin to check CPU temperature", null));
+        }
         else
         {
-            cpuLines.Add((SpecService.IsElevated()
-                ? "temp not available (PawnIO driver not installed)"
-                : "Restart as Admin to check CPU temperature", null));
+            // Driver installed, elevated, still no temp — something else
+            // is wrong; do not blame the driver.
+            cpuLines.Add(("temp not available", null));
         }
-        cards.Add(MakeCard(Icons.Cpu, "PROCESSOR", Shorten(m.Cpu.Name), cpuLines));
+        cards.Add(MakeCard(Icons.Cpu, "PROCESSOR", Shorten(m.Cpu.Name), cpuLines, installAction));
 
         // Graphics card — the VRAM is the star, so it is the headline.
         var gpu = m.Gpus.FirstOrDefault();
@@ -594,7 +610,7 @@ public partial class MainWindow : Window
     /// the soft green. Cards are display only: no clicks, no sections to
     /// go to. The icon is a vector path in the title colour (Sithu, 1.8).
     /// </summary>
-    private Border MakeCard(Geometry? icon, string title, string headline, List<(string Text, IBrush? Brush)> lines)
+    private Border MakeCard(Geometry? icon, string title, string headline, List<(string Text, IBrush? Brush)> lines, Control? action = null)
     {
         var stack = new StackPanel { Spacing = 6 };
         var titleRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
@@ -627,6 +643,9 @@ public partial class MainWindow : Window
                 TextWrapping = TextWrapping.Wrap,
             });
         }
+        // An optional action under the lines — the Processor card's
+        // "Install PawnIO driver" button. No other card uses one.
+        if (action != null) stack.Children.Add(action);
 
         return new Border
         {
@@ -664,6 +683,87 @@ public partial class MainWindow : Window
     // ----- Header actions -----
 
     private void OnRefresh(object? sender, RoutedEventArgs e) => LoadReport();
+
+    /// <summary>The one consent prompt for the driver install: what it
+    /// is, why it is needed, and that it can be removed again. The
+    /// install itself still needs the UAC approval after this.</summary>
+    private async Task<bool> ConfirmPawnIoInstallAsync()
+    {
+        var dialog = new Window
+        {
+            Title = "Install PawnIO driver?",
+            Width = 480,
+            SizeToContent = SizeToContent.Height,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            CanResize = false,
+            Background = _palette.PageBg,
+        };
+        var stack = new StackPanel { Spacing = 12, Margin = new Thickness(20) };
+        stack.Children.Add(new TextBlock
+        {
+            Text = "CPU temperature needs the PawnIO kernel driver (v2.2.0, by namazso, digitally signed). It is installed once for the whole machine and can be removed in Settings › Apps › PawnIO. Nothing else is installed.",
+            Foreground = _palette.DetailFg,
+            FontSize = 13,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        stack.Children.Add(new TextBlock
+        {
+            Text = "Installing needs one administrator approval after this.",
+            Foreground = _palette.MutedFg,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, HorizontalAlignment = HorizontalAlignment.Right };
+        var install = new Button { Content = "Install driver" };
+        StyleButton(install, 12, new Thickness(12, 6));
+        var cancel = new Button { Content = "Not now" };
+        StyleButton(cancel, 12, new Thickness(12, 6));
+        install.Click += (_, _) => dialog.Close(true);
+        cancel.Click += (_, _) => dialog.Close(false);
+        row.Children.Add(install);
+        row.Children.Add(cancel);
+        stack.Children.Add(row);
+        dialog.Content = stack;
+        return await dialog.ShowDialog<bool>(this);
+    }
+
+    /// <summary>The Install button on the Processor card: one prompt,
+    /// then one UAC, then the bundled setup runs silently. Never
+    /// silent, never automatic — and a failed install just leaves the
+    /// temp blank, the rest of the app keeps working.</summary>
+    private async void OnInstallPawnIo(object? sender, RoutedEventArgs e)
+    {
+        if (!await ConfirmPawnIoInstallAsync())
+        {
+            StatusText.Text = "Driver install declined — CPU temperature stays unavailable.";
+            return;
+        }
+        StatusText.Text = "Installing PawnIO driver...";
+        var code = await Task.Run(() => PawnIoInstaller.RequestInstall());
+        if (code == null)
+        {
+            StatusText.Text = "Driver install cancelled — CPU temperature stays unavailable.";
+            return;
+        }
+        if (!PawnIoInstaller.IsSuccess(code.Value))
+        {
+            Logger.Write($"PawnIO install failed with exit code {code.Value}.");
+            StatusText.Text = $"Driver install failed (code {code.Value}) — CPU temperature stays unavailable.";
+            return;
+        }
+        // Installed. The old LHM Computer was opened without the driver,
+        // so close it and read everything fresh.
+        SpecService.ResetSensors();
+        LoadReport();
+        if (PawnIoInstaller.NeedsReboot(code.Value))
+            StatusText.Text = "PawnIO driver installed — restart Windows, then CPU temperature will read.";
+        else if (!IsElevated())
+            StatusText.Text = "PawnIO driver installed — restart as administrator to see CPU temperature.";
+        else if (_model?.Cpu.PackageTempC == null)
+            StatusText.Text = "PawnIO driver installed, but CPU temperature still does not read — see log.";
+        // Otherwise LoadReport already left "Ready. Read at ..." — the
+        // temp is on the card now.
+    }
 
     private void OnCopy(object? sender, RoutedEventArgs e)
     {

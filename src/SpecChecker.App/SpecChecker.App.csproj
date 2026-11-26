@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Assembly/file version. Keep in step with AppInfo.Version (it
          cannot read that const); bump both on every release. -->
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
     <!-- Runs UNELEVATED by default (no ApplicationManifest): WMI + DXGI +
          NVAPI all work unelevated. Only SMART and the opt-in PawnIO install
          need elevation, and those go through a helper/relaunch. -->
@@ -24,6 +24,11 @@
   </PropertyGroup>
   <ItemGroup>
     <AvaloniaResource Include="CCSpecChecker-icon.png" />
+    <!-- The bundled PawnIO 2.2.0 setup (official, signed, unmodified —
+         see third-party/pawnio). Embedded so the single exe stays
+         portable; extracted to %TEMP% only when the user agrees to
+         install, and deleted right after. -->
+    <EmbeddedResource Include="..\..\third-party\pawnio\PawnIO_setup.exe" LogicalName="PawnIO_setup.exe" />
     <PackageReference Include="Avalonia" Version="11.2.4" />
     <PackageReference Include="Avalonia.Desktop" Version="11.2.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.4" />

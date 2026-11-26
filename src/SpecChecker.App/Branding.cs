@@ -17,10 +17,10 @@ public static class Branding
     public const string AppName = "CC Spec Checker";
 
     /// <summary>The window title.</summary>
-    public const string WindowTitle = "CC Spec Checker v2.2 — Computer Corner";
+    public const string WindowTitle = "CC Spec Checker v2.3 — Computer Corner";
 
     /// <summary>The header title.</summary>
-    public const string HeaderTitle = "CC SPEC CHECKER v2.2";
+    public const string HeaderTitle = "CC SPEC CHECKER v2.3";
 
     /// <summary>The shop name in the header credit.</summary>
     public const string ShopName = "CC Computer Corner";

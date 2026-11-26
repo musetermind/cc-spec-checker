@@ -6,6 +6,11 @@ namespace SpecChecker.Core.Services;
 /// <summary>Detailed system specs via WMI — the engine behind the spec report.</summary>
 public static class SpecService
 {
+    /// <summary>Close the sensor engine so the next read opens a fresh
+    /// one. Used after the PawnIO driver is installed while the app is
+    /// running — the old engine was opened without the driver.</summary>
+    public static void ResetSensors() => SensorService.Reset();
+
     /// <summary>
     /// Gather the full structured model in one pass. This is the single
     /// source of truth: the dashboard reads these records, and GetReport()
@@ -463,12 +468,13 @@ public static class SpecService
         var cache = FormatCache(m.Cpu.L2CacheKB, m.Cpu.L3CacheKB);
         if (!string.IsNullOrEmpty(cache))
             sb.AppendLine($"  Cache: {cache}");
-        // CPU temp: when unelevated, point at the fix (restart as admin)
-        // instead of naming the driver — that is what actually unlocks it
-        // on this bench. When already elevated and still no temp, the
-        // driver is the real gap, so name it then.
+        // CPU temp: name the actual blocker. No driver — the install
+        // is offered on the Processor card. Driver there but
+        // unelevated — restart as admin. Driver there, elevated, still
+        // no temp — something else is wrong; do not blame the driver.
         var temp = m.Cpu.PackageTempC.HasValue ? $"  Package temp: {m.Cpu.PackageTempC.Value}C"
-                 : IsElevated() ? "  Package temp: not available (PawnIO driver not installed)"
+                 : !PawnIoDriver.IsInstalled ? "  Package temp: not available (PawnIO driver not installed — install it from the Processor card)"
+                 : IsElevated() ? "  Package temp: not available"
                  : "  Package temp: Restart as Admin to check CPU temperature";
         sb.AppendLine(temp);
         if (m.Cpu.HottestCoreTempC.HasValue && m.Cpu.PackageTempC.HasValue

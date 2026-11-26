@@ -5,6 +5,16 @@ build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8 — the
 0.x series ends here, the app is stable, so the next release moves to
 1.x. The version number is shown in the window title and the header.
 
+## 2.3 — 2026-11-26
+
+- The PawnIO driver (v2.2.0, signed, by namazso) is bundled now, so
+  CPU temperature works without a separate install. The driver is
+  installed only if you agree — one prompt in the app, then one
+  administrator approval — and never silently. Remove it in
+  Settings › Apps › PawnIO.
+- The status line no longer says the tool changes nothing: it reads
+  only, and installs the PawnIO driver only with your permission.
+
 ## 2.2 — 2026-11-25
 
 - MEMORY type labels follow the SMBIOS table now: DDR5 is code 34,

@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Assembly/file version. Keep in step with AppInfo.Version in the
          App project; bump both on every release. -->
-    <Version>2.2.0</Version>
+    <Version>2.3.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <!-- LHM 0.9.6 requires System.Management >= 10.0.2 (its net8.0 target).

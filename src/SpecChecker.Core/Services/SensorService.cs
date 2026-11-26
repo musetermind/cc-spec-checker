@@ -95,6 +95,18 @@ internal static class SensorService
     // is ever shown. If drive temps come back one day, they need a
     // verified source (SMART via DeviceIoControl), not this sensor.
 
+    /// <summary>Close the LHM Computer and forget it, so the next read
+    /// opens a fresh one. Used after the PawnIO driver is installed
+    /// while the app is running: the old Computer was opened without
+    /// the driver and would keep reporting no CPU sensors.</summary>
+    public static void Reset()
+    {
+        try { _computer?.Close(); } catch { }
+        _computer = null;
+        _openFailed = false;
+        Logger.Write("LHM: Computer closed for a fresh open (driver installed).");
+    }
+
     private static Computer? EnsureOpen()
     {
         if (_computer != null) return _computer;

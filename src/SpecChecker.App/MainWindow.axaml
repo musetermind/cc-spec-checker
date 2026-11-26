@@ -70,7 +70,7 @@
     <Border x:Name="StatusBorder" Grid.Row="3" Background="#0A0F0A" Padding="12,6" BorderBrush="#1E521E" BorderThickness="0,1,0,0">
       <DockPanel>
         <TextBlock x:Name="StatusText" Text="Ready." Foreground="#00FF00" VerticalAlignment="Center"/>
-        <TextBlock x:Name="ReadOnlyNote" Text="Read-only — this tool changes nothing on the machine." DockPanel.Dock="Right"
+        <TextBlock x:Name="ReadOnlyNote" Text="Reads only — the PawnIO driver is installed only if you agree." DockPanel.Dock="Right"
                    Foreground="#00FF00" Opacity="0.5" VerticalAlignment="Center"/>
       </DockPanel>
     </Border>
