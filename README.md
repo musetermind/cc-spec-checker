@@ -24,7 +24,7 @@ code stays MIT.
 
 ## Screenshot
 
-![CC Spec Checker v2.1](screenshot.png)
+![CC Spec Checker v2.3](screenshot.png)
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each version (build 1 is 0.1, build 2 is 0.2, and so on; build 18 ships as 1.8).
 
