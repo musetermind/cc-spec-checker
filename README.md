@@ -3,6 +3,8 @@ A free, portable Windows hardware spec viewer from Computer Corner. Correct VRAM
 
 Lightweight by design: a quick check, not a deep diagnostic. No per-core temperatures, clock speeds, fan readings, voltage rails, stress testing, or full SMART data.
 
+See [TESTED.md](TESTED.md) for the hardware it has actually run on, and what it has not run on yet.
+
 ## CPU temperature and the PawnIO driver
 
 CPU temperature comes from LibreHardwareMonitor, which reads the CPU
